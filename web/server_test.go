@@ -336,4 +336,74 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 	}
 
+func TestHandleTestConnect(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+
+	cfgJSON := `{
+		"services": [
+			{
+				"name": "mock-svc",
+				"server": {
+					"host": "127.0.0.1",
+					"port": 65431,
+					"username": "tester",
+					"password": "real_password",
+					"connectTimeout": 1
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	srv := NewServer(":0", configPath)
+
+	// 1. GET 请求拦截
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/server/test-connect", nil)
+	wGet := httptest.NewRecorder()
+	srv.handleTestConnect(wGet, reqGet)
+	if wGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", wGet.Code)
+	}
+
+	// 2. 格式错误 JSON 请求拦截
+	reqBadJSON := httptest.NewRequest(http.MethodPost, "/api/server/test-connect", strings.NewReader("bad-json"))
+	wBadJSON := httptest.NewRecorder()
+	srv.handleTestConnect(wBadJSON, reqBadJSON)
+	if wBadJSON.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", wBadJSON.Code)
+	}
+
+	// 3. 提交带掩码密码请求，应从现有配置继承密码并尝试探测（因端口未开启返回 status: error）
+	reqBody := `{
+		"serviceName": "mock-svc",
+		"server": {
+			"host": "127.0.0.1",
+			"port": 65431,
+			"username": "tester",
+			"password": "******",
+			"connectTimeout": 1
+		}
+	}`
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/server/test-connect", strings.NewReader(reqBody))
+	wPost := httptest.NewRecorder()
+	srv.handleTestConnect(wPost, reqPost)
+
+	if wPost.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", wPost.Code, wPost.Body.String())
+	}
+	var res map[string]interface{}
+	if err := json.Unmarshal(wPost.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+	if res["status"] != "error" {
+		t.Errorf("expected status 'error' for unreachable port, got %v", res["status"])
+	}
+	if res["error"] == nil || res["error"] == "" {
+		t.Errorf("expected non-empty error message, got nil")
+	}
+}
+
 

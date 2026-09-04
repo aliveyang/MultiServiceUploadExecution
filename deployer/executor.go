@@ -93,6 +93,9 @@ func NewSSHClient(server config.ServerConfig, log *logger.ServiceLogger) (*SSHCl
 
 // NewSSHClientContext 创建并建立 SSH 连接，支持 Context 控制超时与中断
 func NewSSHClientContext(ctx context.Context, server config.ServerConfig, log *logger.ServiceLogger) (*SSHClient, error) {
+	if log == nil {
+		log = logger.NewServiceLogger("SSH", 0)
+	}
 	authMethods := make([]ssh.AuthMethod, 0)
 
 	// 支持私钥认证
@@ -172,6 +175,18 @@ func (s *SSHClient) Close() error {
 		return s.client.Close()
 	}
 	return nil
+}
+
+// TestSSHConnectivity 仅建立并安全断开 SSH 连接，验证主机、端口、指纹与凭证连通性，不执行任何远程命令
+func TestSSHConnectivity(ctx context.Context, server config.ServerConfig, log *logger.ServiceLogger) error {
+	if log == nil {
+		log = logger.NewServiceLogger("Probe", 0)
+	}
+	client, err := NewSSHClientContext(ctx, server, log)
+	if err != nil {
+		return err
+	}
+	return client.Close()
 }
 
 // ExecuteRemoteCommand 在远程服务器上执行单条命令，实时流式输出（向后兼容）

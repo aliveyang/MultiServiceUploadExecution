@@ -100,11 +100,12 @@ func (s *Server) StartContext(ctx context.Context, autoOpen bool) error {
 	fileServer := http.FileServer(http.FS(subFS))
 	mux.Handle("/", fileServer)
 
-	// API 路由
-	mux.HandleFunc("/api/config", s.handleConfig)
-	mux.HandleFunc("/api/deploy", s.handleDeploy)
-	mux.HandleFunc("/api/deploy/cancel", s.handleDeployCancel)
-	mux.HandleFunc("/api/deploy/events", s.handleSSE)
+		// API 路由
+		mux.HandleFunc("/api/config", s.handleConfig)
+		mux.HandleFunc("/api/deploy", s.handleDeploy)
+		mux.HandleFunc("/api/deploy/cancel", s.handleDeployCancel)
+		mux.HandleFunc("/api/server/test-connect", s.handleTestConnect)
+		mux.HandleFunc("/api/deploy/events", s.handleSSE)
 
 	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -310,12 +311,90 @@ func (s *Server) handleDeployCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusBadRequest)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error": "No deployment task is currently running.",
-	})
-}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "No deployment task is currently running.",
+		})
+	}
+
+	// handleTestConnect 轻量探测 SSH 服务器连通性，不执行任何远程命令，支持脱敏密码自动继承
+	func (s *Server) handleTestConnect(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			ServiceName string              `json:"serviceName,omitempty"`
+			Server      config.ServerConfig `json:"server"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("JSON parse error: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		targetServer := req.Server
+		// 如果密码或 passphrase 带有掩码，尝试从既有配置继承原真实密码
+		if targetServer.Password == config.MaskSecret || targetServer.Passphrase == config.MaskSecret || (targetServer.Password == "" && targetServer.PrivateKeyPath == "") {
+			if _, err := os.Stat(s.configPath); err == nil {
+				if origCfg, err := config.LoadConfig(s.configPath); err == nil {
+					for _, svc := range origCfg.Services {
+						if (req.ServiceName != "" && strings.EqualFold(svc.Name, req.ServiceName)) ||
+							(strings.EqualFold(svc.Server.Host, targetServer.Host) && svc.Server.Port == targetServer.Port && svc.Server.Username == targetServer.Username) {
+							if targetServer.Password == config.MaskSecret || targetServer.Password == "" {
+								targetServer.Password = svc.Server.Password
+							}
+							if targetServer.Passphrase == config.MaskSecret || targetServer.Passphrase == "" {
+								targetServer.Passphrase = svc.Server.Passphrase
+							}
+							if targetServer.PrivateKeyPath == "" && svc.Server.PrivateKeyPath != "" {
+								targetServer.PrivateKeyPath = svc.Server.PrivateKeyPath
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// 环境变量展开
+		targetServer.Host = os.ExpandEnv(targetServer.Host)
+		targetServer.Username = os.ExpandEnv(targetServer.Username)
+		targetServer.Password = os.ExpandEnv(targetServer.Password)
+		targetServer.Passphrase = os.ExpandEnv(targetServer.Passphrase)
+		targetServer.PrivateKeyPath = os.ExpandEnv(targetServer.PrivateKeyPath)
+
+		if targetServer.Port <= 0 {
+			targetServer.Port = 22
+		}
+		timeoutSec := targetServer.ConnectTimeout
+		if timeoutSec <= 0 || timeoutSec > 10 {
+			timeoutSec = 5
+		}
+		targetServer.ConnectTimeout = timeoutSec
+
+		probeCtx, cancel := context.WithTimeout(r.Context(), time.Duration(timeoutSec)*time.Second)
+		defer cancel()
+
+		start := time.Now()
+		err := deployer.TestSSHConnectivity(probeCtx, targetServer, nil)
+		latency := time.Since(start).Milliseconds()
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err != nil {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "error",
+				"error":  err.Error(),
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "ok",
+			"latencyMs": latency,
+		})
+	}
 
 // handleSSE 处理实时日志推送事件流
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {

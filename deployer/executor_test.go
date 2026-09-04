@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"multi-service-deploy/config"
 	"multi-service-deploy/logger"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -86,3 +87,22 @@ func TestExecuteLocalCommandChineseOutput(t *testing.T) {
 			t.Errorf("expected cancellation error, got: %v", err)
 		}
 	}
+
+func TestTestSSHConnectivityFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// 测试连接到不可达的非法地址，应返回错误而不能 panic
+	cfg := config.ServerConfig{
+		Host:           "127.0.0.1",
+		Port:           65432, // 不存在的端口
+		Username:       "invalid",
+		Password:       "invalid",
+		ConnectTimeout: 1,
+	}
+
+	err := TestSSHConnectivity(ctx, cfg, nil)
+	if err == nil {
+		t.Fatalf("expected error connecting to non-existent SSH server, got nil")
+	}
+}
