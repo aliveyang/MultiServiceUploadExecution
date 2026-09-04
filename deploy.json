@@ -1,0 +1,107 @@
+{
+  "parallel": true,
+  "hooks": {},
+  "services": [
+    {
+      "name": "api-server-01",
+      "server": {
+        "host": "192.168.1.101",
+        "port": 22,
+        "username": "root",
+        "password": "your_password_here",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "./dist",
+        "remotePath": "/opt/app/api",
+        "exclude": [
+          ".git",
+          "*.log",
+          "node_modules",
+          ".DS_Store"
+        ]
+      },
+      "hooks": {
+        "preUploadLocal": [
+          "echo [Local] Building api project..."
+        ],
+        "preUploadRemote": [
+          "echo '==\u003e [Remote] Ensuring target dir exists...'",
+          "mkdir -p /opt/app/api"
+        ],
+        "postUploadRemote": [
+          "echo '==\u003e [Remote] Restarting service...'",
+          "chmod +x /opt/app/api/run.sh 2\u003e/dev/null || true",
+          "systemctl restart my-api 2\u003e/dev/null || echo 'service restart skipped'"
+        ],
+        "postUploadLocal": [
+          "echo [Local] api-server-01 deployment finished successfully."
+        ]
+      }
+    },
+    {
+      "name": "web-server-02",
+      "server": {
+        "host": "192.168.1.102",
+        "port": 22,
+        "username": "root",
+        "password": "your_password_here",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "./web-dist",
+        "remotePath": "/var/www/html",
+        "exclude": [
+          ".git",
+          "*.map"
+        ]
+      },
+      "hooks": {
+        "preUploadLocal": [
+          "echo [Local] Packing web assets...12"
+        ],
+        "preUploadRemote": [
+          "mkdir -p /var/www/html"
+        ],
+        "postUploadRemote": [
+          "nginx -s reload 2\u003e/dev/null || echo 'nginx reload skipped'12"
+        ],
+        "postUploadLocal": [
+          "echo [Local] web-server-02 deployment finished successfully.21"
+        ]
+      }
+    },
+    {
+      "name": "web-server-03",
+      "server": {
+        "host": "192.168.1.102",
+        "port": 22,
+        "username": "root",
+        "password": "your_password_here",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "./web-dist",
+        "remotePath": "/var/www/html",
+        "exclude": [
+          ".git",
+          "*.map"
+        ]
+      },
+      "hooks": {
+        "preUploadLocal": [
+          "echo [Local] Packing web assets..."
+        ],
+        "preUploadRemote": [
+          "mkdir -p /var/www/html"
+        ],
+        "postUploadRemote": [
+          "nginx -s reload 2\u003e/dev/null || echo 'nginx reload skipped'"
+        ],
+        "postUploadLocal": [
+          "echo [Local] web-server-02 deployment finished successfully."
+        ]
+      }
+    }
+  ]
+}

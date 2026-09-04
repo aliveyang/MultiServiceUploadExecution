@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多服务器部署控制台</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --border: #e4e9f0;
+      --border-strong: #cbd5e1;
+      --text: #17233b;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --green: #16a34a;
+      --red: #dc2626;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+      --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.14);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ===== 顶栏 ===== */
+    header {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      height: 52px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      z-index: 5;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14.5px; white-space: nowrap; color: var(--text); }
+    .brand .logo {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      display: grid; place-items: center; font-size: 13px;
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+    }
+    .spacer { flex: 1; }
+    .parallel-toggle {
+      display: flex; align-items: center; gap: 7px;
+      color: var(--muted); font-size: 12px; cursor: pointer; user-select: none;
+      padding: 6px 11px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2);
+      transition: .15s;
+    }
+    .parallel-toggle:hover { border-color: var(--border-strong); }
+    .parallel-toggle input { display: none; }
+    .parallel-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; transition: .2s; }
+    .parallel-toggle input:checked + .dot { background: var(--green); box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 13px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel); color: var(--text);
+      font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, box-shadow .15s;
+      box-shadow: var(--shadow);
+    }
+    .btn:hover { background: var(--panel-2); border-color: var(--border-strong); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3); }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.danger-ghost { color: var(--red); }
+    .btn.danger-ghost:hover { border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.05); }
+
+    /* ===== 主体：侧边栏 + 编辑区 ===== */
+    main { flex: 1; display: flex; min-height: 0; }
+
+    aside {
+      flex: 0 0 240px;
+      display: flex; flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--panel);
+      min-height: 0;
+    }
+    .aside-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px 8px;
+      color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .8px;
+      text-transform: uppercase;
+    }
+    .aside-head .count { background: #eef2f7; border-radius: 9px; padding: 0 7px; font-size: 10.5px; color: var(--muted); }
+    .svc-list { flex: 1; overflow-y: auto; padding: 0 10px 10px; }
+    .svc-item {
+      position: relative;
+      padding: 9px 11px 9px 15px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 5px;
+      border: 1px solid transparent;
+      transition: background .15s, border-color .15s, box-shadow .15s;
+    }
+    .svc-item:hover { background: #f1f5f9; }
+    .svc-item.active {
+      background: #eff6ff;
+      border-color: rgba(37, 99, 235, 0.35);
+      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
+    }
+    .svc-item .name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 7px; overflow: hidden; color: var(--text); }
+    .svc-item .name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .svc-item .meta { color: var(--muted); font-size: 11px; margin-top: 3px; display: flex; gap: 6px; align-items: center; }
+    .svc-item .del {
+      position: absolute; right: 7px; top: 7px;
+      width: 20px; height: 20px; border-radius: 5px;
+      display: none; place-items: center;
+      color: var(--red); font-size: 13px; background: transparent; border: none; cursor: pointer;
+    }
+    .svc-item:hover .del { display: grid; }
+    .svc-item .del:hover { background: rgba(220, 38, 38, 0.1); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+    .status-dot.on { background: var(--green); box-shadow: 0 0 0 2.5px rgba(22, 163, 74, 0.15); }
+    .status-dot.off { background: #cbd5e1; }
+    .host-tag { background: rgba(15, 23, 42, 0.05); padding: 0 5px; border-radius: 4px; font-family: Consolas, monospace; }
+    .aside-add {
+      margin: 10px; padding: 9px;
+      border: 1px dashed var(--border-strong); border-radius: 8px;
+      background: transparent; color: var(--muted);
+      font-size: 12.5px; font-weight: 500; cursor: pointer; text-align: center;
+      transition: .15s;
+    }
+    .aside-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+    /* ===== 编辑区 ===== */
+    .editor { flex: 1; overflow-y: auto; min-width: 0; }
+    .editor-inner { max-width: 980px; padding: 20px 24px 44px; }
+
+    .ed-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .ed-head input.svc-name {
+      background: transparent; border: none; border-bottom: 1px dashed transparent;
+      color: var(--text); font-size: 18px; font-weight: 700; padding: 2px 4px; min-width: 60px; flex: 0 1 auto;
+    }
+    .ed-head input.svc-name:hover, .ed-head input.svc-name:focus { border-bottom-color: var(--border-strong); outline: none; }
+    .ed-head .chip {
+      font-size: 11px; color: var(--muted);
+      border: 1px solid var(--border); background: var(--panel);
+      border-radius: 20px; padding: 2px 10px;
+      font-family: Consolas, monospace;
+      box-shadow: var(--shadow);
+    }
+    .ed-head .enable-switch { margin-left: auto; }
+
+    .tabs {
+      display: inline-flex; gap: 2px;
+      background: #eaeff6; border: 1px solid var(--border);
+      border-radius: 9px; padding: 3px; margin-bottom: 18px;
+    }
+    .tab {
+      padding: 6px 16px; border-radius: 6px; border: none;
+      background: transparent; color: var(--muted);
+      font-size: 12.5px; font-weight: 500; cursor: pointer; transition: .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12); }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .grid { display: grid; gap: 14px 16px; }
+    .g2 { grid-template-columns: repeat(2, 1fr); }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 900px) { .g3 { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px) { .g2, .g3 { grid-template-columns: 1fr; } }
+
+    .field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    .field label b { color: var(--accent); font-weight: normal; }
+    .field input, .field textarea, .hook-card textarea {
+      width: 100%;
+      background: var(--panel); border: 1px solid var(--border-strong);
+      color: var(--text); border-radius: 8px;
+      padding: 7px 11px; font-size: 12.5px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus, .field textarea:focus, .hook-card textarea:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
+    }
+    .field textarea {
+      font-family: "Cascadia Code", Consolas, monospace;
+      resize: vertical; min-height: 92px; line-height: 1.6;
+    }
+    .field .hint { font-size: 10.5px; color: var(--faint); margin-top: 4px; }
+
+    .inline-check {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+      padding: 7px 0; color: var(--text); font-size: 12.5px; user-select: none;
+    }
+    .inline-check input { display: none; }
+    .checkbox {
+      width: 16px; height: 16px; border-radius: 5px;
+      border: 1px solid var(--border-strong); background: var(--panel);
+      display: grid; place-items: center; transition: .15s; flex: 0 0 auto;
+    }
+    .checkbox svg { width: 10px; height: 10px; opacity: 0; transition: .15s; }
+    .inline-check input:checked + .checkbox { background: var(--accent); border-color: var(--accent); }
+    .inline-check input:checked + .checkbox svg { opacity: 1; }
+
+    /* 钩子四象限 */
+    .hook-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 760px) { .hook-grid { grid-template-columns: 1fr; } }
+    .hook-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 13px 15px 15px;
+      box-shadow: var(--shadow);
+    }
+    .hook-card .hc-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 12.5px; font-weight: 600; }
+    .hook-card .step {
+      width: 18px; height: 18px; border-radius: 6px; font-size: 10.5px; font-weight: 600;
+      display: grid; place-items: center; color: #fff; flex: 0 0 auto;
+    }
+    .hook-card .where { margin-left: auto; font-size: 10.5px; font-weight: 600; padding: 1px 8px; border-radius: 10px; }
+    .where.local { background: rgba(37, 99, 235, 0.09); color: var(--accent); }
+    .where.remote { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+    .hook-card textarea {
+      width: 100%;
+      min-height: 150px; background: var(--panel-2);
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12.5px; line-height: 1.6;
+      resize: vertical;
+    }
+    .flow-hint {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      color: var(--faint); font-size: 11px; padding: 2px 2px 0;
+    }
+    .flow-hint b { color: var(--muted); font-weight: 600; }
+
+    /* 空状态 */
+    .empty {
+      height: 100%; display: grid; place-items: center; text-align: center;
+      color: var(--muted);
+    }
+    .empty .icon { font-size: 40px; margin-bottom: 12px; opacity: .8; }
+    .empty p { margin-bottom: 16px; font-size: 13.5px; line-height: 1.8; }
+
+    /* ===== 部署终端弹窗（终端保持深色） ===== */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(3px);
+      display: none; place-items: center; padding: 28px;
+    }
+    .modal-backdrop.show { display: grid; }
+    .modal {
+      width: min(880px, 100%); height: min(600px, 88vh);
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 12px; display: flex; flex-direction: column;
+      overflow: hidden; box-shadow: var(--shadow-lg);
+    }
+    .modal-head {
+      flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #1e293b; border-bottom: 1px solid #0f172a;
+    }
+    .modal-head .t { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; color: #e2e8f0; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    .badge { font-size: 11px; padding: 2px 9px; border-radius: 20px; background: #334155; color: #cbd5e1; }
+    .badge.running { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
+    .badge.ok { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
+    .badge.fail { background: rgba(248, 113, 113, 0.2); color: #fca5a5; }
+    .terminal {
+      flex: 1; overflow-y: auto; padding: 12px 16px;
+      font: 12px/1.65 "Cascadia Code", Consolas, monospace;
+      white-space: pre-wrap; word-break: break-all; color: #c7d5ea;
+    }
+    .modal-foot { flex: 0 0 auto; padding: 8px 14px; border-top: 1px solid #1e293b; display: flex; justify-content: flex-end; gap: 8px; }
+    .modal .btn { background: #1e293b; border-color: #334155; color: #cbd5e1; box-shadow: none; }
+    .modal .btn:hover { background: #334155; }
+
+    /* 终端 ANSI 颜色 */
+    .a-red { color: #f87171; }
+    .a-green { color: #4ade80; }
+    .a-yellow { color: #facc15; }
+    .a-blue { color: #93c5fd; }
+    .a-magenta { color: #d8b4fe; }
+    .a-cyan { color: #67e8f9; }
+    .a-dim { color: #64748b; }
+    .a-b { font-weight: 600; }
+
+    /* Toast */
+    .toast {
+      position: fixed; top: 62px; left: 50%; transform: translate(-50%, -8px);
+      padding: 9px 18px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
+      z-index: 300; opacity: 0; pointer-events: none;
+      transition: opacity .25s, transform .25s;
+      box-shadow: var(--shadow-lg);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .toast.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #d3dce6; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #b6c2d1; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    /* 窄屏：侧栏横排 */
+    @media (max-width: 720px) {
+      main { flex-direction: column; }
+      aside { flex: 0 0 auto; flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--border); }
+      .aside-head { display: none; }
+      .svc-list { display: flex; padding: 8px; overflow-x: auto; }
+      .svc-item { flex: 0 0 auto; min-width: 150px; margin: 0 4px 0 0; }
+      .aside-add { margin: 8px; padding: 8px 14px; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand"><div class="logo">🚀</div>多服务器部署控制台</div>
+    <div class="spacer"></div>
+    <label class="parallel-toggle" title="开启后所有服务器同时并行部署">
+      <input type="checkbox" id="global-parallel" checked><span class="dot"></span>全并发执行
+    </label>
+    <button class="btn" onclick="exportConfig()">⬇ 导出</button>
+    <button class="btn" onclick="saveConfig()">💾 保存</button>
+    <button class="btn primary" onclick="startDeploy()">⚡ 一键部署</button>
+  </header>
+
+  <main>
+    <aside>
+      <div class="aside-head">服务单元 <span class="count" id="svc-count">0</span></div>
+      <div class="svc-list" id="svc-list"></div>
+      <button class="aside-add" onclick="addService()">＋ 添加服务单元</button>
+    </aside>
+
+    <section class="editor" id="editor">
+      <div class="empty" id="empty-state">
+        <div>
+          <div class="icon">🛰️</div>
+          <p>左侧还没有服务单元<br>从「＋ 添加服务单元」开始，或先保存/加载配置</p>
+          <button class="btn primary" onclick="addService()">＋ 立即添加</button>
+        </div>
+      </div>
+      <div class="editor-inner" id="editor-inner" style="display:none"></div>
+    </section>
+  </main>
+
+  <!-- 部署实时终端 -->
+  <div class="modal-backdrop" id="deploy-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="t"><span class="live-dot" id="live-dot"></span>部署实时终端</div>
+        <span class="badge" id="deploy-badge">就绪</span>
+        <div class="spacer"></div>
+        <button class="btn danger-ghost" id="cancel-deploy-btn" style="padding:4px 10px;font-size:11.5px;color:#f87171" onclick="cancelDeploy()">中止部署</button>
+        <button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="clearTerminal()">清屏</button>
+        <button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="closeTerminal()">关闭</button>
+      </div>
+      <div class="terminal" id="terminal-output"></div>
+      <div class="modal-foot"><span class="a-dim" style="font-size:11px">日志流由 SSE 实时推送 · 各服务彩色前缀区分 · 支持安全主动中断</span></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  let deployConfig = { parallel: true, hooks: {}, services: [] };
+  let currentIndex = -1;
+  let isGlobalView = false;
+  let activeTab = 'server';
+  let eventSource = null;
+
+  window.addEventListener('DOMContentLoaded', loadConfig);
+
+  async function loadConfig() {
+    try {
+      const resp = await fetch('/api/config');
+      if (!resp.ok) throw new Error(await resp.text());
+      deployConfig = await resp.json();
+      if (!Array.isArray(deployConfig.services)) deployConfig.services = [];
+      if (!deployConfig.hooks) deployConfig.hooks = {};
+      document.getElementById('global-parallel').checked = deployConfig.parallel !== false;
+      currentIndex = deployConfig.services.length ? 0 : -1;
+      isGlobalView = deployConfig.services.length === 0;
+      renderAll();
+    } catch (err) {
+      showToast('加载配置失败: ' + err.message, 'error');
+    }
+  }
+
+  function renderAll() {
+    document.getElementById('global-parallel').checked = deployConfig.parallel !== false;
+    renderSidebar();
+    renderEditor();
+  }
+
+  /* ===== 侧边栏 ===== */
+  function renderSidebar() {
+    const list = document.getElementById('svc-list');
+    document.getElementById('svc-count').textContent = deployConfig.services.length;
+    list.innerHTML = '';
+
+    // 1. 顶部全局批次设置入口
+    const globalItem = document.createElement('div');
+    globalItem.className = 'svc-item' + (isGlobalView ? ' active' : '');
+    globalItem.style.marginBottom = '8px';
+    globalItem.style.borderLeft = isGlobalView ? '3px solid var(--accent)' : '3px solid #94a3b8';
+    globalItem.style.background = isGlobalView ? 'var(--accent-soft)' : 'var(--panel-2)';
+    globalItem.onclick = () => { isGlobalView = true; currentIndex = -1; renderAll(); };
+    globalItem.innerHTML = `
+      <div class="name"><span>⚙️</span><span><b>全局批次设置</b></span></div>
+      <div class="meta"><span class="host-tag">preDeploy · postDeploy</span></div>
+    `;
+    list.appendChild(globalItem);
+
+    // 2. 服务单元列表
+    deployConfig.services.forEach((svc, i) => {
+      const enabled = svc.enabled !== false;
+      const item = document.createElement('div');
+      item.className = 'svc-item' + (!isGlobalView && i === currentIndex ? ' active' : '');
+      item.onclick = () => { isGlobalView = false; currentIndex = i; renderAll(); };
+      item.innerHTML = `
+        <div class="name"><span class="status-dot ${enabled ? 'on' : 'off'}"></span><span>${escapeHtml(svc.name || 'service-' + (i + 1))}</span></div>
+        <div class="meta"><span class="host-tag">${escapeHtml(svc.server?.host || '未配置主机')}</span><span>:${svc.server?.port || 22}</span>${enabled ? '' : '<span style="color:#dc2626">已禁用</span>'}</div>
+        <button class="del" title="删除" onclick="event.stopPropagation();deleteService(${i})">✕</button>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  /* ===== 编辑区 ===== */
+  function renderEditor() {
+    if (isGlobalView) {
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('editor-inner').style.display = 'block';
+      renderGlobalEditorInner();
+      return;
+    }
+    const has = currentIndex >= 0 && currentIndex < deployConfig.services.length;
+    document.getElementById('empty-state').style.display = has ? 'none' : 'grid';
+    document.getElementById('editor-inner').style.display = has ? 'block' : 'none';
+    if (!has) return;
+    renderEditorInner();
+  }
+
+  function renderGlobalEditorInner() {
+    if (!deployConfig.hooks) deployConfig.hooks = {};
+    const h = deployConfig.hooks;
+    const arr = a => (a || []).join('\n');
+
+    document.getElementById('editor-inner').innerHTML = `
+      <div class="ed-head">
+        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px">
+          <span>⚙️</span> 全局批次生命周期设置
+        </div>
+        <span class="chip">全节点统筹 · 本地仅执行一次</span>
+      </div>
+
+      <div style="padding:16px 20px 24px;overflow-y:auto;height:calc(100% - 50px)">
+        <div style="margin-bottom:16px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--muted);font-size:12.5px;line-height:1.6">
+          💡 <b>全局钩子说明</b>：全局生命周期钩子独立于各服务节点。<b>preDeploy</b> 在本批次所有服务器并发启动前在本地仅运行一次（如全局 <code>npm run build</code> 打包或代码拉取），若命令失败则立刻中止，<b>不会触碰任何远程服务器</b>；<b>postDeploy</b> 在所有服务节点均部署成功后在本地执行一次（如发送上线通知 Webhook）。
+        </div>
+
+        <div class="grid" style="gap:16px">
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#2563eb">1</span>批次并发前 · 执行命令 (preDeploy)<span class="where local">本地 · 仅一次</span></div>
+            <textarea onchange="updGlobalHook('preDeploy', this.value)" placeholder="每行一条命令&#10;例: echo '==> 开始全局构建...'&#10;例: npm run build">${escapeHtml(arr(h.preDeploy))}</textarea>
+            <div class="hint" style="padding:0 12px 10px;font-size:11px;color:var(--faint)">执行时机：在任何并发 Goroutine 派生或 SSH 连接建立前在本地统一执行</div>
+          </div>
+
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#16a34a">2</span>批次全部成功后 · 执行命令 (postDeploy)<span class="where local">本地 · 仅一次</span></div>
+            <textarea onchange="updGlobalHook('postDeploy', this.value)" placeholder="每行一条命令&#10;例: echo '==> 所有节点部署完成，发送通知...'&#10;例: curl -s 'https://oapi.dingtalk.com/robot/send?...'">${escapeHtml(arr(h.postDeploy))}</textarea>
+            <div class="hint" style="padding:0 12px 10px;font-size:11px;color:var(--faint)">执行时机：当且仅当所有选中的服务器节点全部返回 SUCCESS 时在本地触发</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function updGlobalHook(field, val) {
+    if (!deployConfig.hooks) deployConfig.hooks = {};
+    deployConfig.hooks[field] = val.split('\n').map(x => x.trim()).filter(Boolean);
+  }
+
+  function renderEditorInner() {
+    const i = currentIndex;
+    const svc = deployConfig.services[i];
+    const enabled = svc.enabled !== false;
+    const s = svc.server || {}, u = svc.upload || {}, h = svc.hooks || {};
+    const arr = a => (a || []).join('\n');
+    const exclude = (u.exclude || []).join(', ');
+
+    document.getElementById('editor-inner').innerHTML = `
+      <div class="ed-head">
+        <input class="svc-name" value="${escapeHtml(svc.name || '')}" placeholder="服务名称"
+               onchange="upd('name', this.value)">
+        <span class="chip">${escapeHtml(s.host || 'host?')}:${s.port || 22}</span>
+        <label class="inline-check enable-switch" title="禁用后部署时跳过该单元">
+          <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleEnabled(this.checked)">
+          <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          启用
+        </label>
+        <button class="btn" style="padding:5px 11px" onclick="duplicateService(${i})">⧉ 复制</button>
+        <button class="btn danger-ghost" style="padding:5px 11px" onclick="deleteService(${i})">🗑 删除</button>
+      </div>
+
+      <div class="tabs">
+        <button class="tab ${activeTab === 'server' ? 'active' : ''}" onclick="switchTab('server')">🖥 服务器连接</button>
+        <button class="tab ${activeTab === 'upload' ? 'active' : ''}" onclick="switchTab('upload')">📁 文件传输</button>
+        <button class="tab ${activeTab === 'hooks' ? 'active' : ''}" onclick="switchTab('hooks')">⚡ 生命周期钩子</button>
+      </div>
+
+      <div class="tab-pane ${activeTab === 'server' ? 'active' : ''}">
+        <div class="grid g3">
+          <div class="field"><label>主机 IP / 域名 <b>*</b></label>
+            <input value="${escapeHtml(s.host || '')}" placeholder="192.168.1.100" onchange="updServer('host', this.value)"></div>
+          <div class="field"><label>SSH 端口</label>
+            <input type="number" value="${s.port || 22}" onchange="updServer('port', parseInt(this.value)||22)"></div>
+          <div class="field"><label>用户名 <b>*</b></label>
+            <input value="${escapeHtml(s.username || '')}" placeholder="root" onchange="updServer('username', this.value)"></div>
+          <div class="field"><label>密码</label>
+            <input type="password" value="${escapeHtml(s.password || '')}" placeholder="密码 / 私钥二选一" onchange="updServer('password', this.value)">
+            <div class="hint">已脱敏保护：保持 ****** 则沿用原密码或环境变量</div></div>
+          <div class="field"><label>私钥路径</label>
+            <input value="${escapeHtml(s.privateKeyPath || '')}" placeholder="~/.ssh/id_rsa" onchange="updServer('privateKeyPath', this.value)"></div>
+          <div class="field"><label>连接超时（秒）</label>
+            <input type="number" value="${s.connectTimeout || 15}" onchange="updServer('connectTimeout', parseInt(this.value)||15)"></div>
+        </div>
+      </div>
+
+      <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}">
+        <div class="grid g2">
+          <div class="field"><label>本地源路径</label>
+            <input value="${escapeHtml(u.localPath || '')}" placeholder="./dist" onchange="updUpload('localPath', this.value)">
+            <div class="hint">支持单文件或整个目录递归上传</div></div>
+          <div class="field"><label>远端目标路径</label>
+            <input value="${escapeHtml(u.remotePath || '')}" placeholder="/opt/app/dist" onchange="updUpload('remotePath', this.value)">
+            <div class="hint">远端父目录不存在时自动创建</div></div>
+          <div class="field"><label>排除规则（逗号分隔，支持通配符）</label>
+            <input value="${escapeHtml(exclude)}" placeholder=".git, *.log, node_modules" onchange="updExclude(this.value)"></div>
+          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label class="inline-check">
+              <input type="checkbox" ${u.cleanRemote ? 'checked' : ''} onchange="updUpload('cleanRemote', this.checked)">
+              <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              上传前清空远端目标目录
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane ${activeTab === 'hooks' ? 'active' : ''}">
+        <div class="hook-grid">
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#64748b">1</span>上传前 · 执行命令<span class="where local">本地</span></div>
+            <textarea onchange="updHook('preUploadLocal', this.value)" placeholder="每行一条命令&#10;例: npm run build">${escapeHtml(arr(h.preUploadLocal))}</textarea>
+          </div>
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#64748b">2</span>上传前 · 执行命令<span class="where remote">远端</span></div>
+            <textarea onchange="updHook('preUploadRemote', this.value)" placeholder="每行一条命令&#10;例: mkdir -p /opt/app/backup">${escapeHtml(arr(h.preUploadRemote))}</textarea>
+          </div>
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:var(--accent)">3</span>上传后 · 执行命令<span class="where remote">远端</span></div>
+            <textarea onchange="updHook('postUploadRemote', this.value)" placeholder="每行一条命令&#10;例: systemctl restart my-app">${escapeHtml(arr(h.postUploadRemote))}</textarea>
+          </div>
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:var(--accent)">4</span>上传后 · 执行命令<span class="where local">本地</span></div>
+            <textarea onchange="updHook('postUploadLocal', this.value)" placeholder="每行一条命令&#10;例: echo '部署完成'">${escapeHtml(arr(h.postUploadLocal))}</textarea>
+          </div>
+          <div class="flow-hint">执行顺序：<b>①本地</b> → SSH 连接 → <b>②远端</b> → SFTP 上传 → <b>③远端</b> → <b>④本地</b>；任一步失败即中止该节点部署</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function switchTab(t) { activeTab = t; renderEditorInner(); }
+
+  /* ===== 数据同步 ===== */
+  function upd(field, val) { deployConfig.services[currentIndex][field] = val; renderSidebar(); }
+  function toggleEnabled(val) {
+    deployConfig.services[currentIndex].enabled = val;
+    renderAll();
+  }
+  function updServer(field, val) {
+    const s = deployConfig.services[currentIndex];
+    if (!s.server) s.server = {};
+    s.server[field] = val;
+    if (field === 'host') renderSidebar();
+  }
+  function updUpload(field, val) {
+    const s = deployConfig.services[currentIndex];
+    if (!s.upload) s.upload = {};
+    s.upload[field] = val;
+  }
+  function updExclude(val) {
+    updUpload('exclude', val.split(',').map(x => x.trim()).filter(Boolean));
+  }
+  function updHook(field, val) {
+    const s = deployConfig.services[currentIndex];
+    if (!s.hooks) s.hooks = {};
+    s.hooks[field] = val.split('\n').map(x => x.trim()).filter(Boolean);
+  }
+
+  /* ===== 服务单元增删复制 ===== */
+  function addService() {
+    isGlobalView = false;
+    const n = deployConfig.services.length + 1;
+    deployConfig.services.push({
+      name: `service-node-${n}`,
+      server: { host: '', port: 22, username: 'root', password: '', connectTimeout: 15 },
+      upload: { localPath: './dist', remotePath: `/opt/app/service-${n}`, exclude: ['.git', '*.log', 'node_modules'], cleanRemote: false },
+      hooks: {}
+    });
+    currentIndex = deployConfig.services.length - 1;
+    activeTab = 'server';
+    renderAll();
+  }
+  function duplicateService(i) {
+    const clone = JSON.parse(JSON.stringify(deployConfig.services[i]));
+    clone.name = (clone.name || 'service') + '-copy';
+    deployConfig.services.splice(i + 1, 0, clone);
+    currentIndex = i + 1;
+    renderAll();
+    showToast('已复制服务单元');
+  }
+  function deleteService(i) {
+    if (!confirm(`确定删除服务单元「${deployConfig.services[i].name || '未命名'}」？`)) return;
+    deployConfig.services.splice(i, 1);
+    if (currentIndex >= deployConfig.services.length) currentIndex = deployConfig.services.length - 1;
+    renderAll();
+  }
+
+  /* ===== 保存 / 导出 ===== */
+  function snapshot() {
+    deployConfig.parallel = document.getElementById('global-parallel').checked;
+    return JSON.stringify(deployConfig, null, 2);
+  }
+  async function saveConfig() {
+    try {
+      const resp = await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: snapshot()
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      showToast('✅ 配置已保存到 deploy.json');
+    } catch (err) {
+      showToast('保存失败: ' + err.message, 'error');
+    }
+  }
+  function exportConfig() {
+    const a = document.createElement('a');
+    a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(snapshot());
+    a.download = 'deploy.json';
+    a.click();
+  }
+
+  /* ===== 一键部署 + SSE 终端 ===== */
+  async function startDeploy() {
+    await saveConfig();
+    const badge = document.getElementById('deploy-badge');
+    const term = document.getElementById('terminal-output');
+    const cancelBtn = document.getElementById('cancel-deploy-btn');
+    document.getElementById('deploy-modal').classList.add('show');
+    document.getElementById('live-dot').style.display = '';
+    if (cancelBtn) cancelBtn.style.display = '';
+    term.innerHTML = '';
+    badge.textContent = '并发部署中';
+    badge.className = 'badge running';
+
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource('/api/deploy/events');
+    eventSource.onmessage = e => {
+      const d = e.data;
+      if (d === '[[DEPLOY_COMPLETED_SUCCESS]]') { setBadge('ok', '部署成功'); return; }
+      if (d === '[[DEPLOY_COMPLETED_FAILED]]') { setBadge('fail', '部署失败'); return; }
+      if (d === '[[DEPLOY_CANCELED]]') { setBadge('fail', '已中止'); return; }
+      const div = document.createElement('div');
+      div.innerHTML = ansiToHtml(d);
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    };
+
+    try {
+      const resp = await fetch('/api/deploy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parallel: deployConfig.parallel })
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+    } catch (err) {
+      setBadge('fail', '触发失败');
+      term.innerHTML += `<div class="a-red">触发部署失败: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function cancelDeploy() {
+    if (!confirm('确定中止当前正在执行的部署任务？')) return;
+    try {
+      const resp = await fetch('/api/deploy/cancel', { method: 'POST' });
+      if (resp.ok) {
+        showToast('已发送中止请求...');
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        showToast(data.error || '中止请求失败', 'error');
+      }
+    } catch (err) {
+      showToast('网络错误: ' + err.message, 'error');
+    }
+  }
+
+  function setBadge(cls, text) {
+    const badge = document.getElementById('deploy-badge');
+    badge.textContent = text;
+    badge.className = 'badge ' + cls;
+    document.getElementById('live-dot').style.display = 'none';
+    const cancelBtn = document.getElementById('cancel-deploy-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (eventSource) { eventSource.close(); eventSource = null; }
+  }
+  function clearTerminal() { document.getElementById('terminal-output').innerHTML = ''; }
+  function closeTerminal() {
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    document.getElementById('deploy-modal').classList.remove('show');
+  }
+
+  /* ===== 工具函数 ===== */
+  function ansiToHtml(text) {
+    let s = escapeHtml(text)
+      .replace(/\x1b\[1m/g, '<span class="a-b">')
+      .replace(/\x1b\[31m/g, '<span class="a-red">')
+      .replace(/\x1b\[32m/g, '<span class="a-green">')
+      .replace(/\x1b\[33m/g, '<span class="a-yellow">')
+      .replace(/\x1b\[34m/g, '<span class="a-blue">')
+      .replace(/\x1b\[35m/g, '<span class="a-magenta">')
+      .replace(/\x1b\[36m/g, '<span class="a-cyan">')
+      .replace(/\x1b\[0m/g, '</span>');
+    // 清除残余 ANSI 控制序列与裸 ESC 字符，避免浏览器渲染成乱码方块
+    s = s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b/g, '');
+    return s;
+  }
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+</script>
+</body>
+</html>

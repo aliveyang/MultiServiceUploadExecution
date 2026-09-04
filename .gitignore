@@ -1,0 +1,22 @@
+# Binaries & Executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+deploy
+multi-service-deploy
+
+# Logs & temp files
+*.log
+*.tmp
+*.out
+
+# IDE & Editor
+.idea/
+.vscode/
+.zcode/
+
+# OS specific
+.DS_Store
+Thumbs.db
