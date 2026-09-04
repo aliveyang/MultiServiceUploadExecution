@@ -303,7 +303,8 @@ func isDangerousPath(p string) bool {
 | **ARCH-04** | SSE 高频日志溢出丢包 | SSE 消息缓冲队列由 100 扩容至 1024，降低瞬时高密日志下的丢包概率 | ✅ **已闭环** |
 | **ARCH-05** | 远端高危路径计算平台语义偏差 | `config.IsDangerousRemotePath` 强制使用 POSIX 标准库 `path.Clean`，防御 Windows 平台下反斜杠及相对路径越权逃逸 | ✅ **已闭环** |
 | **ARCH-06** | Web 端缺少任务中断与优雅停机 | `web.Server` 支持 `StartContext` 优雅停机，新增 `POST /api/deploy/cancel` 主动中断与前端一键中止按钮 | ✅ **已闭环** |
-
-**最终验证结论**：全模块单元测试与端到端 Mock SSH 仿真测试 100% 通过（PASS），绿色单二进制 `deploy.exe` 已成功构建并验证完毕。
+| **ARCH-07** | 单一流水线无法支撑多场景与分阶段发布 | 引入 `ScenarioConfig`、`Group`、`Type (standard/exec_only/sync_only)` 与 `Stage` 波次编排；实现跨阶段熔断机制，前置阶段失败自动阻断后续波次 | ✅ **已闭环** |
+| **ARCH-08** | 全局批次生命周期缺乏分组独立性 | 引入 `GroupConfig` 与 `BatchHooks`，支持每个业务分组拥有独占的 `preDeploy` / `postDeploy` 钩子，仅在涉及该组时在本地触发 | ✅ **已闭环** |
+| **SEC-06** | Windows Shell 单引号命令重定向逃逸隐患 | 修复示例命令中由于单引号界定符在 cmd.exe 下被识别为输出重定向的缺陷，强制统一使用双引号或安全转义输出 | ✅ **已闭环** |
 
 **最终验证结论**：全模块单元测试与端到端 Mock SSH 仿真测试 100% 通过（PASS），绿色单二进制 `deploy.exe` 已成功构建并验证完毕。

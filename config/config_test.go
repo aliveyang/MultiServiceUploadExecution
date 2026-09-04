@@ -365,10 +365,226 @@ func TestValidateConfigErrors(t *testing.T) {
 				"/usr/bin/../../bin",
 				"/data/../../",
 			}
-			for _, p := range escapes {
-				if !IsDangerousRemotePath(p) {
-					t.Errorf("expected escaped path %q to be detected as dangerous", p)
-				}
+		for _, p := range escapes {
+			if !IsDangerousRemotePath(p) {
+				t.Errorf("expected escaped path %q to be detected as dangerous", p)
 			}
 		}
+	}
+
+	func TestServiceGroupTypeStageDefaults(t *testing.T) {
+		jsonContent := `{
+			"services": [
+				{
+					"name": "default-svc",
+					"server": {
+						"host": "127.0.0.1",
+						"username": "root",
+						"password": "pwd"
+					}
+				},
+				{
+					"name": "custom-svc",
+					"group": "backend",
+					"type": "exec_only",
+					"stage": 2,
+					"server": {
+						"host": "127.0.0.1",
+						"username": "root",
+						"password": "pwd"
+					}
+				}
+			]
+		}`
+
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "deploy.json")
+		if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		cfg, err := LoadConfig(configPath)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		// 检查默认值回填
+		s1 := cfg.Services[0]
+		if s1.Group != DefaultGroup {
+			t.Errorf("expected default group %q, got %q", DefaultGroup, s1.Group)
+		}
+		if s1.Type != DeployTypeStandard {
+			t.Errorf("expected default type %q, got %q", DeployTypeStandard, s1.Type)
+		}
+		if s1.Stage != 1 {
+			t.Errorf("expected default stage 1, got %d", s1.Stage)
+		}
+
+		// 检查显式设置
+		s2 := cfg.Services[1]
+		if s2.Group != "backend" {
+			t.Errorf("expected group 'backend', got %q", s2.Group)
+		}
+		if s2.Type != DeployTypeExecOnly {
+			t.Errorf("expected type 'exec_only', got %q", s2.Type)
+		}
+		if s2.Stage != 2 {
+			t.Errorf("expected stage 2, got %d", s2.Stage)
+		}
+	}
+
+	func TestInvalidDeployType(t *testing.T) {
+		cfg := &DeployConfig{
+			Services: []ServiceConfig{
+				{
+					Name: "bad-svc",
+					Type: "invalid_type",
+					Server: ServerConfig{
+						Host:     "127.0.0.1",
+						Username: "root",
+						Password: "pwd",
+					},
+				},
+			},
+		}
+		err := ValidateAndNormalize(cfg)
+		if err == nil {
+			t.Fatalf("expected error for invalid deploy type, got nil")
+		}
+	}
+
+	func TestScenarioConfigParsingAndValidation(t *testing.T) {
+		jsonContent := `{
+			"scenarios": [
+				{
+					"name": "prod",
+					"description": "生产全量发布",
+					"groups": ["infra", "backend"]
+				},
+				{
+					"name": "quick",
+					"types": ["exec_only"]
+				}
+			],
+			"services": [
+				{
+					"name": "s1",
+					"group": "infra",
+					"server": { "host": "127.0.0.1", "username": "root", "password": "pwd" }
+				}
+			]
+		}`
+
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "deploy.json")
+		if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		cfg, err := LoadConfig(configPath)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Scenarios) != 2 {
+			t.Fatalf("expected 2 scenarios, got %d", len(cfg.Scenarios))
+		}
+
+		sc := cfg.FindScenario("PROD")
+		if sc == nil || sc.Name != "prod" {
+			t.Fatalf("FindScenario case-insensitive lookup failed")
+		}
+		if len(sc.Groups) != 2 || sc.Groups[0] != "infra" {
+			t.Errorf("unexpected groups in scenario: %v", sc.Groups)
+		}
+
+		// 重复名称校验
+		duplicateCfg := &DeployConfig{
+			Scenarios: []ScenarioConfig{
+				{Name: "test"},
+				{Name: "TEST"},
+			},
+			Services: []ServiceConfig{
+				{
+					Name:   "s1",
+					Server: ServerConfig{Host: "127.0.0.1", Username: "root", Password: "pwd"},
+				},
+			},
+		}
+		if err := ValidateAndNormalize(duplicateCfg); err == nil {
+			t.Fatalf("expected error for duplicate scenario names, got nil")
+		}
+	}
+
+	func TestGroupConfigParsingAndValidation(t *testing.T) {
+		jsonContent := `{
+			"groups": [
+				{
+					"name": "frontend",
+					"description": "前端组",
+					"hooks": {
+						"preDeploy": ["npm run build"],
+						"postDeploy": "echo 'frontend done'"
+					}
+				},
+				{
+					"name": "backend",
+					"description": "后端组",
+					"hooks": {
+						"preDeploy": "go build"
+					}
+				}
+			],
+			"services": [
+				{
+					"name": "web-1",
+					"group": "frontend",
+					"server": { "host": "127.0.0.1", "username": "root", "password": "pwd" }
+				}
+			]
+		}`
+
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "deploy.json")
+		if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		cfg, err := LoadConfig(configPath)
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+
+		if len(cfg.Groups) != 2 {
+			t.Fatalf("expected 2 groups, got %d", len(cfg.Groups))
+		}
+
+		grp := cfg.FindGroup("FRONTEND")
+		if grp == nil || grp.Name != "frontend" {
+			t.Fatalf("FindGroup case-insensitive failed")
+		}
+		if len(grp.Hooks.PreDeploy) != 1 || grp.Hooks.PreDeploy[0] != "npm run build" {
+			t.Errorf("unexpected preDeploy hook in group: %v", grp.Hooks.PreDeploy)
+		}
+		if len(grp.Hooks.PostDeploy) != 1 || grp.Hooks.PostDeploy[0] != "echo 'frontend done'" {
+			t.Errorf("unexpected postDeploy hook in group: %v", grp.Hooks.PostDeploy)
+		}
+
+		// 重复分组名校验
+		dupGroupCfg := &DeployConfig{
+			Groups: []GroupConfig{
+				{Name: "backend"},
+				{Name: "BACKEND"},
+			},
+			Services: []ServiceConfig{
+				{
+					Name:   "s1",
+					Server: ServerConfig{Host: "127.0.0.1", Username: "root", Password: "pwd"},
+				},
+			},
+		}
+		if err := ValidateAndNormalize(dupGroupCfg); err == nil {
+			t.Fatalf("expected error for duplicate group names, got nil")
+		}
+	}
 

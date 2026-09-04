@@ -127,6 +127,32 @@
     .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
     .status-dot.on { background: var(--green); box-shadow: 0 0 0 2.5px rgba(22, 163, 74, 0.15); }
     .status-dot.off { background: #cbd5e1; }
+
+    /* 分组与类型徽标 */
+    .group-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 6px 5px; margin-top: 6px;
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      border-bottom: 1px dashed var(--border); margin-bottom: 6px;
+    }
+    .group-header .gh-title { display: flex; align-items: center; gap: 5px; }
+    .group-header .gh-deploy-btn {
+      font-size: 10px; padding: 2px 7px; border-radius: 5px;
+      background: var(--panel); border: 1px solid var(--border);
+      color: var(--accent); cursor: pointer; transition: .15s;
+    }
+    .group-header .gh-deploy-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+    .type-pill {
+      font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: .3px;
+    }
+    .type-pill.standard { background: #e0f2fe; color: #0369a1; }
+    .type-pill.exec_only { background: #fef3c7; color: #b45309; }
+    .type-pill.sync_only { background: #dcfce7; color: #15803d; }
+    .stage-pill {
+      font-size: 9.5px; font-weight: 600; padding: 1px 5px; border-radius: 4px;
+      background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+    }
     .host-tag { background: rgba(15, 23, 42, 0.05); padding: 0 5px; border-radius: 4px; font-family: Consolas, monospace; }
     .aside-add {
       margin: 10px; padding: 9px;
@@ -326,6 +352,12 @@
   <header>
     <div class="brand"><div class="logo">🚀</div>多服务器部署控制台</div>
     <div class="spacer"></div>
+    <div class="scenario-box" style="display:flex;align-items:center;gap:6px;background:var(--panel-2);padding:4px 10px;border-radius:7px;border:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--muted);font-weight:600">🎯 场景:</span>
+      <select id="scenario-selector" onchange="onScenarioChange(this.value)" style="background:transparent;border:none;font-size:12.5px;color:var(--text);font-weight:600;cursor:pointer;outline:none">
+        <option value="">全部服务</option>
+      </select>
+    </div>
     <label class="parallel-toggle" title="开启后所有服务器同时并行部署">
       <input type="checkbox" id="global-parallel" checked><span class="dot"></span>全并发执行
     </label>
@@ -372,11 +404,13 @@
   <div class="toast" id="toast"></div>
 
 <script>
-  let deployConfig = { parallel: true, hooks: {}, services: [] };
+  let deployConfig = { parallel: true, hooks: {}, groups: [], scenarios: [], services: [] };
   let currentIndex = -1;
   let isGlobalView = false;
+  let currentGroupView = null;
   let activeTab = 'server';
   let eventSource = null;
+  let selectedScenario = '';
 
   window.addEventListener('DOMContentLoaded', loadConfig);
 
@@ -386,14 +420,38 @@
       if (!resp.ok) throw new Error(await resp.text());
       deployConfig = await resp.json();
       if (!Array.isArray(deployConfig.services)) deployConfig.services = [];
+      if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
+      if (!Array.isArray(deployConfig.scenarios)) deployConfig.scenarios = [];
       if (!deployConfig.hooks) deployConfig.hooks = {};
       document.getElementById('global-parallel').checked = deployConfig.parallel !== false;
       currentIndex = deployConfig.services.length ? 0 : -1;
       isGlobalView = deployConfig.services.length === 0;
+      currentGroupView = null;
+
+      updateScenarioDropdown();
       renderAll();
     } catch (err) {
       showToast('加载配置失败: ' + err.message, 'error');
     }
+  }
+
+  function updateScenarioDropdown() {
+    const sel = document.getElementById('scenario-selector');
+    if (!sel) return;
+    const oldVal = sel.value;
+    sel.innerHTML = '<option value="">全部服务 (All)</option>';
+    deployConfig.scenarios.forEach(sc => {
+      const opt = document.createElement('option');
+      opt.value = sc.name;
+      opt.textContent = `${sc.name} ${sc.description ? '(' + sc.description + ')' : ''}`;
+      sel.appendChild(opt);
+    });
+    sel.value = oldVal || selectedScenario || '';
+  }
+
+  function onScenarioChange(val) {
+    selectedScenario = val;
+    renderSidebar();
   }
 
   function renderAll() {
@@ -402,7 +460,7 @@
     renderEditor();
   }
 
-  /* ===== 侧边栏 ===== */
+  /* ===== 侧边栏：按 Group 分组聚合 ===== */
   function renderSidebar() {
     const list = document.getElementById('svc-list');
     document.getElementById('svc-count').textContent = deployConfig.services.length;
@@ -414,26 +472,109 @@
     globalItem.style.marginBottom = '8px';
     globalItem.style.borderLeft = isGlobalView ? '3px solid var(--accent)' : '3px solid #94a3b8';
     globalItem.style.background = isGlobalView ? 'var(--accent-soft)' : 'var(--panel-2)';
-    globalItem.onclick = () => { isGlobalView = true; currentIndex = -1; renderAll(); };
+    globalItem.onclick = () => { isGlobalView = true; currentGroupView = null; currentIndex = -1; renderAll(); };
     globalItem.innerHTML = `
-      <div class="name"><span>⚙️</span><span><b>全局批次设置</b></span></div>
+      <div class="name"><span>⚙️</span><span><b>全局顶层批次设置</b></span></div>
       <div class="meta"><span class="host-tag">preDeploy · postDeploy</span></div>
     `;
     list.appendChild(globalItem);
 
-    // 2. 服务单元列表
+    // 计算当前场景下的白名单
+    let sc = null;
+    if (selectedScenario) {
+      sc = (deployConfig.scenarios || []).find(s => (s.name || '').toLowerCase() === selectedScenario.toLowerCase());
+    }
+    const scGroups = new Set((sc?.groups || []).map(x => x.toLowerCase()));
+    const scServices = new Set((sc?.services || []).map(x => x.toLowerCase()));
+    const scTypes = new Set((sc?.types || []).map(x => x.toLowerCase()));
+
+    // 2. 按 group 聚类服务
+    const groupsMap = new Map();
     deployConfig.services.forEach((svc, i) => {
-      const enabled = svc.enabled !== false;
-      const item = document.createElement('div');
-      item.className = 'svc-item' + (!isGlobalView && i === currentIndex ? ' active' : '');
-      item.onclick = () => { isGlobalView = false; currentIndex = i; renderAll(); };
-      item.innerHTML = `
-        <div class="name"><span class="status-dot ${enabled ? 'on' : 'off'}"></span><span>${escapeHtml(svc.name || 'service-' + (i + 1))}</span></div>
-        <div class="meta"><span class="host-tag">${escapeHtml(svc.server?.host || '未配置主机')}</span><span>:${svc.server?.port || 22}</span>${enabled ? '' : '<span style="color:#dc2626">已禁用</span>'}</div>
-        <button class="del" title="删除" onclick="event.stopPropagation();deleteService(${i})">✕</button>
-      `;
-      list.appendChild(item);
+      const sName = (svc.name || '').toLowerCase();
+      const sGroup = (svc.group || 'default').toLowerCase();
+      const sType = (svc.type || 'standard').toLowerCase();
+
+      // 如果选了场景，做场景过滤判定
+      if (sc) {
+        if (scServices.size > 0 && !scServices.has(sName)) return;
+        if (scGroups.size > 0 && !scGroups.has(sGroup)) return;
+        if (scTypes.size > 0 && !scTypes.has(sType)) return;
+      }
+
+      const grp = svc.group || 'default';
+      if (!groupsMap.has(grp)) {
+        groupsMap.set(grp, []);
+      }
+      groupsMap.get(grp).push({ svc, index: i });
     });
+
+    if (groupsMap.size === 0) {
+      const emptyTip = document.createElement('div');
+      emptyTip.style.padding = '14px 10px';
+      emptyTip.style.fontSize = '12px';
+      emptyTip.style.color = 'var(--faint)';
+      emptyTip.textContent = '当前场景下无匹配服务';
+      list.appendChild(emptyTip);
+      return;
+    }
+
+    groupsMap.forEach((items, groupName) => {
+      const isGrpActive = !isGlobalView && currentGroupView && currentGroupView.toLowerCase() === groupName.toLowerCase();
+      // 分组标题栏 + 组批次设置 + 组独立部署按钮
+      const gh = document.createElement('div');
+      gh.className = 'group-header';
+      if (isGrpActive) {
+        gh.style.color = 'var(--accent)';
+      }
+      gh.innerHTML = `
+        <div class="gh-title" style="cursor:pointer" onclick="openGroupHooks('${escapeHtml(groupName)}')">
+          📁 <span>${escapeHtml(groupName)}</span> <span style="font-size:10px;color:var(--faint)">(${items.length})</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <button class="gh-deploy-btn" style="color:${isGrpActive ? 'var(--accent)' : 'var(--muted)'}" title="配置该组专属批次前后置钩子" onclick="event.stopPropagation();openGroupHooks('${escapeHtml(groupName)}')">⚙️ 组钩子</button>
+          <button class="gh-deploy-btn" title="仅部署此分组" onclick="event.stopPropagation();startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 部署此组</button>
+        </div>
+      `;
+      list.appendChild(gh);
+
+      // 分组下的各服务项
+      items.forEach(({ svc, index: i }) => {
+        const enabled = svc.enabled !== false;
+        const item = document.createElement('div');
+        item.className = 'svc-item' + (!isGlobalView && !currentGroupView && i === currentIndex ? ' active' : '');
+        item.onclick = () => { isGlobalView = false; currentGroupView = null; currentIndex = i; renderAll(); };
+
+        const typeClass = svc.type === 'exec_only' ? 'exec_only' : (svc.type === 'sync_only' ? 'sync_only' : 'standard');
+        const typeLabel = svc.type === 'exec_only' ? 'Exec' : (svc.type === 'sync_only' ? 'Sync' : 'Standard');
+        const stageLabel = `S${svc.stage || 1}`;
+
+        item.innerHTML = `
+          <div class="name">
+            <span class="status-dot ${enabled ? 'on' : 'off'}"></span>
+            <span>${escapeHtml(svc.name || 'service-' + (i + 1))}</span>
+            <span style="margin-left:auto;display:flex;gap:3px;align-items:center">
+              <span class="type-pill ${typeClass}">${typeLabel}</span>
+              <span class="stage-pill">${stageLabel}</span>
+            </span>
+          </div>
+          <div class="meta">
+            <span class="host-tag">${escapeHtml(svc.server?.host || '未配置主机')}</span>
+            <span>:${svc.server?.port || 22}</span>
+            ${enabled ? '' : '<span style="color:#dc2626">已禁用</span>'}
+          </div>
+          <button class="del" title="删除" onclick="event.stopPropagation();deleteService(${i})">✕</button>
+        `;
+        list.appendChild(item);
+      });
+    });
+  }
+
+  function openGroupHooks(groupName) {
+    isGlobalView = false;
+    currentGroupView = groupName;
+    currentIndex = -1;
+    renderAll();
   }
 
   /* ===== 编辑区 ===== */
@@ -444,11 +585,69 @@
       renderGlobalEditorInner();
       return;
     }
+    if (currentGroupView) {
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('editor-inner').style.display = 'block';
+      renderGroupEditorInner(currentGroupView);
+      return;
+    }
     const has = currentIndex >= 0 && currentIndex < deployConfig.services.length;
     document.getElementById('empty-state').style.display = has ? 'none' : 'grid';
     document.getElementById('editor-inner').style.display = has ? 'block' : 'none';
     if (!has) return;
     renderEditorInner();
+  }
+
+  function renderGroupEditorInner(groupName) {
+    if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
+    let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === groupName.toLowerCase());
+    if (!grp) {
+      grp = { name: groupName, hooks: {} };
+    }
+    if (!grp.hooks) grp.hooks = {};
+    const arr = a => (a || []).join('\n');
+
+    document.getElementById('editor-inner').innerHTML = `
+      <div class="ed-head">
+        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px">
+          <span>📁</span> 分组批次生命周期设置: <span style="color:var(--accent)">${escapeHtml(groupName)}</span>
+        </div>
+        <button class="btn primary" style="padding:5px 12px;margin-left:auto" onclick="startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 立即部署此分组</button>
+      </div>
+
+      <div style="padding:16px 20px 24px;overflow-y:auto;height:calc(100% - 50px)">
+        <div style="margin-bottom:16px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--muted);font-size:12.5px;line-height:1.6">
+          💡 <b>分组生命周期说明</b>：此钩子仅当本次部署包含 <b>${escapeHtml(groupName)}</b> 组的服务时，在本地针对该组独立执行一次。<br>
+          • <b>preDeploy</b>：在该组所有远程服务开始调度前统一在本地运行（例如前端组执行 <code>npm run build</code>、后端组执行 <code>go build</code>），若失败则立即阻断该组，<b>绝不触碰远程服务器</b>；<br>
+          • <b>postDeploy</b>：当且仅当该组的所有服务节点均成功返回 SUCCESS 时在本地触发（例如触发该分组专属的健康检查或冒烟测试）。
+        </div>
+
+        <div class="grid" style="gap:16px">
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#2563eb">1</span>【${escapeHtml(groupName)} 组】并发启动前 · 本地执行命令 (preDeploy)<span class="where local">本地 · 仅一次</span></div>
+            <textarea onchange="updGroupHook('${escapeHtml(groupName)}', 'preDeploy', this.value)" placeholder="每行一条命令&#10;例: cd frontend && npm run build&#10;例: go build -o bin/api ./cmd/api">${escapeHtml(arr(grp.hooks.preDeploy))}</textarea>
+            <div class="hint" style="padding:0 12px 10px;font-size:11px;color:var(--faint)">执行时机：在调度该分组的任何服务器节点前统一在本地执行一次</div>
+          </div>
+
+          <div class="hook-card">
+            <div class="hc-head"><span class="step" style="background:#16a34a">2</span>【${escapeHtml(groupName)} 组】全部成功后 · 本地执行命令 (postDeploy)<span class="where local">本地 · 仅一次</span></div>
+            <textarea onchange="updGroupHook('${escapeHtml(groupName)}', 'postDeploy', this.value)" placeholder="每行一条命令&#10;例: echo '${escapeHtml(groupName)} 组节点部署完毕，执行健康检查...'&#10;例: curl -s http://192.168.1.100:8080/health">${escapeHtml(arr(grp.hooks.postDeploy))}</textarea>
+            <div class="hint" style="padding:0 12px 10px;font-size:11px;color:var(--faint)">执行时机：当且仅当该分组的所有服务器节点全部部署成功时在本地触发</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function updGroupHook(groupName, field, val) {
+    if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
+    let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === groupName.toLowerCase());
+    if (!grp) {
+      grp = { name: groupName, hooks: {} };
+      deployConfig.groups.push(grp);
+    }
+    if (!grp.hooks) grp.hooks = {};
+    grp.hooks[field] = val.split('\n').map(x => x.trim()).filter(Boolean);
   }
 
   function renderGlobalEditorInner() {
@@ -509,17 +708,43 @@
           <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           启用
         </label>
+        <button class="btn" style="padding:5px 11px" onclick="startDeploy({ targetServices: ['${escapeHtml(svc.name)}'] })">⚡ 仅部署此服务</button>
         <button class="btn" style="padding:5px 11px" onclick="duplicateService(${i})">⧉ 复制</button>
         <button class="btn danger-ghost" style="padding:5px 11px" onclick="deleteService(${i})">🗑 删除</button>
       </div>
 
-      <div class="tabs">
+      <!-- 分组与任务属性栏 -->
+      <div style="display:flex;gap:12px;padding:8px 20px 12px;background:var(--panel-2);border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">📁 分组 (Group):</span>
+          <input value="${escapeHtml(svc.group || 'default')}" placeholder="default, backend, infra..."
+                 onchange="upd('group', this.value)"
+                 style="width:130px;padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text)">
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">🛠 任务类型 (Type):</span>
+          <select onchange="upd('type', this.value)" style="padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text);font-weight:500">
+            <option value="standard" ${(!svc.type || svc.type === 'standard') ? 'selected' : ''}>standard (经典全流程)</option>
+            <option value="exec_only" ${svc.type === 'exec_only' ? 'selected' : ''}>exec_only (纯命令执行，免SFTP)</option>
+            <option value="sync_only" ${svc.type === 'sync_only' ? 'selected' : ''}>sync_only (纯文件同步，免远端命令)</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">🌊 波次阶段 (Stage):</span>
+          <input type="number" min="1" value="${svc.stage || 1}" onchange="upd('stage', parseInt(this.value)||1)"
+                 style="width:60px;padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text)" title="阶段升序串行执行，阶段内并发">
+        </div>
+      </div>
+
+      <div class="tabs" style="margin:14px 20px 10px">
         <button class="tab ${activeTab === 'server' ? 'active' : ''}" onclick="switchTab('server')">🖥 服务器连接</button>
         <button class="tab ${activeTab === 'upload' ? 'active' : ''}" onclick="switchTab('upload')">📁 文件传输</button>
         <button class="tab ${activeTab === 'hooks' ? 'active' : ''}" onclick="switchTab('hooks')">⚡ 生命周期钩子</button>
       </div>
 
-      <div class="tab-pane ${activeTab === 'server' ? 'active' : ''}">
+      <div class="tab-pane ${activeTab === 'server' ? 'active' : ''}" style="padding:0 20px">
         <div class="grid g3">
           <div class="field"><label>主机 IP / 域名 <b>*</b></label>
             <input value="${escapeHtml(s.host || '')}" placeholder="192.168.1.100" onchange="updServer('host', this.value)"></div>
@@ -537,7 +762,7 @@
         </div>
       </div>
 
-      <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}">
+      <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}" style="padding:0 20px">
         <div class="grid g2">
           <div class="field"><label>本地源路径</label>
             <input value="${escapeHtml(u.localPath || '')}" placeholder="./dist" onchange="updUpload('localPath', this.value)">
@@ -557,7 +782,7 @@
         </div>
       </div>
 
-      <div class="tab-pane ${activeTab === 'hooks' ? 'active' : ''}">
+      <div class="tab-pane ${activeTab === 'hooks' ? 'active' : ''}" style="padding:0 20px">
         <div class="hook-grid">
           <div class="hook-card">
             <div class="hc-head"><span class="step" style="background:#64748b">1</span>上传前 · 执行命令<span class="where local">本地</span></div>
@@ -615,6 +840,9 @@
     const n = deployConfig.services.length + 1;
     deployConfig.services.push({
       name: `service-node-${n}`,
+      group: 'default',
+      type: 'standard',
+      stage: 1,
       server: { host: '', port: 22, username: 'root', password: '', connectTimeout: 15 },
       upload: { localPath: './dist', remotePath: `/opt/app/service-${n}`, exclude: ['.git', '*.log', 'node_modules'], cleanRemote: false },
       hooks: {}
@@ -661,8 +889,8 @@
     a.click();
   }
 
-  /* ===== 一键部署 + SSE 终端 ===== */
-  async function startDeploy() {
+  /* ===== 一键部署 + SSE 终端 (支持按场景/分组分别部署) ===== */
+  async function startDeploy(opts = {}) {
     await saveConfig();
     const badge = document.getElementById('deploy-badge');
     const term = document.getElementById('terminal-output');
@@ -671,8 +899,24 @@
     document.getElementById('live-dot').style.display = '';
     if (cancelBtn) cancelBtn.style.display = '';
     term.innerHTML = '';
-    badge.textContent = '并发部署中';
+    badge.textContent = '调度中...';
     badge.className = 'badge running';
+
+    // 默认场景取当前选择器
+    const scenario = opts.scenario || selectedScenario || '';
+    const payload = {
+      parallel: deployConfig.parallel,
+      scenario: scenario || undefined,
+      targetGroups: opts.targetGroups || undefined,
+      targetServices: opts.targetServices || undefined,
+      targetTypes: opts.targetTypes || undefined
+    };
+
+    let targetDesc = '全量服务';
+    if (opts.targetServices?.length) targetDesc = `服务 [${opts.targetServices.join(', ')}]`;
+    else if (opts.targetGroups?.length) targetDesc = `分组 [${opts.targetGroups.join(', ')}]`;
+    else if (scenario) targetDesc = `场景 [${scenario}]`;
+    term.innerHTML = `<div class="a-dim">==> 触发部署目标: ${escapeHtml(targetDesc)}</div>`;
 
     if (eventSource) eventSource.close();
     eventSource = new EventSource('/api/deploy/events');
@@ -690,9 +934,13 @@
     try {
       const resp = await fetch('/api/deploy', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parallel: deployConfig.parallel })
+        body: JSON.stringify(payload)
       });
-      if (!resp.ok) throw new Error(await resp.text());
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || await resp.text());
+      }
+      badge.textContent = '部署执行中';
     } catch (err) {
       setBadge('fail', '触发失败');
       term.innerHTML += `<div class="a-red">触发部署失败: ${escapeHtml(err.message)}</div>`;

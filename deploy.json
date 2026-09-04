@@ -1,9 +1,106 @@
 {
   "parallel": true,
-  "hooks": {},
+  "hooks": {
+    "preDeploy": [
+      "echo \"[Global Pre-Hook] 全局统一前置准备（仅执行一次）...\""
+    ],
+    "postDeploy": [
+      "echo \"[Global Post-Hook] 全局统一后置通知（全部成功后仅执行一次）...\""
+    ]
+  },
+  "groups": [
+    {
+      "name": "infra",
+      "description": "基础设施与数据库迁移组",
+      "hooks": {
+        "preDeploy": [
+          "echo \"[Infra Pre-Hook] 基础设施组本地环境预检...\""
+        ],
+        "postDeploy": [
+          "echo \"[Infra Post-Hook] 基础设施组服务就绪！\""
+        ]
+      }
+    },
+    {
+      "name": "backend",
+      "description": "后端核心微服务集群",
+      "hooks": {
+        "preDeploy": [
+          "echo \"[Backend Pre-Hook] 后端微服务统一本地编译构建...\""
+        ],
+        "postDeploy": [
+          "echo \"[Backend Post-Hook] 后端微服务集群全部节点成功发布！\""
+        ]
+      }
+    },
+    {
+      "name": "frontend",
+      "description": "前端单页面与静态资源组",
+      "hooks": {
+        "preDeploy": [
+          "echo \"[Frontend Pre-Hook] 前端本地静态打包构建...\""
+        ],
+        "postDeploy": [
+          "echo \"[Frontend Post-Hook] 前端静态资源发布完毕！\""
+        ]
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "prod",
+      "description": "生产全量部署 (先基础设施与后端，最后前端)",
+      "groups": [
+        "infra",
+        "backend",
+        "frontend"
+      ]
+    },
+    {
+      "name": "backend-only",
+      "description": "仅更新数据库与后端服务",
+      "groups": [
+        "infra",
+        "backend"
+      ]
+    },
+    {
+      "name": "quick-restart",
+      "description": "快速维护：仅执行纯命令任务",
+      "types": [
+        "exec_only"
+      ]
+    }
+  ],
   "services": [
     {
+      "name": "db-",
+      "group": "infra",
+      "type": "sync_only",
+      "stage": 1,
+      "server": {
+        "host": "192.168.1.100",
+        "port": 22,
+        "username": "root",
+        "password": "******",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "",
+        "remotePath": ""
+      },
+      "hooks": {
+        "preUploadRemote": [
+          "echo '==\u003e [Remote] Running database migrations...'",
+          "cd /opt/app \u0026\u0026 ./migrate -env=prod || true"
+        ]
+      }
+    },
+    {
       "name": "api-server-01",
+      "group": "backend",
+      "type": "standard",
+      "stage": 1,
       "server": {
         "host": "192.168.1.101",
         "port": 22,
@@ -41,38 +138,9 @@
     },
     {
       "name": "web-server-02",
-      "server": {
-        "host": "192.168.1.102",
-        "port": 22,
-        "username": "root",
-        "password": "your_password_here",
-        "connectTimeout": 15
-      },
-      "upload": {
-        "localPath": "./web-dist",
-        "remotePath": "/var/www/html",
-        "exclude": [
-          ".git",
-          "*.map"
-        ]
-      },
-      "hooks": {
-        "preUploadLocal": [
-          "echo [Local] Packing web assets...12"
-        ],
-        "preUploadRemote": [
-          "mkdir -p /var/www/html"
-        ],
-        "postUploadRemote": [
-          "nginx -s reload 2\u003e/dev/null || echo 'nginx reload skipped'12"
-        ],
-        "postUploadLocal": [
-          "echo [Local] web-server-02 deployment finished successfully.21"
-        ]
-      }
-    },
-    {
-      "name": "web-server-03",
+      "group": "frontend",
+      "type": "sync_only",
+      "stage": 3,
       "server": {
         "host": "192.168.1.102",
         "port": 22,

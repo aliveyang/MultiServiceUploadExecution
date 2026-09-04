@@ -292,4 +292,48 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 	}
 
+	func TestDeployWithScenarioAndGroupPayload(t *testing.T) {
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "deploy.json")
+
+		cfgJSON := `{
+			"scenarios": [
+				{
+					"name": "prod",
+					"groups": ["backend"]
+				}
+			],
+			"services": [
+				{
+					"name": "api-svc",
+					"group": "backend",
+					"type": "standard",
+					"server": {
+						"host": "127.0.0.1",
+						"username": "root",
+						"password": "pwd"
+					}
+				}
+			]
+		}`
+		if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		srv := NewServer(":0", configPath)
+
+		// 触发带 scenario 和 targetGroups 的部署请求
+		reqBody := `{"scenario":"prod","targetGroups":["backend"],"targetTypes":["standard"]}`
+		req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(reqBody))
+		w := httptest.NewRecorder()
+		srv.handleDeploy(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected HTTP 200 OK, got %d: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `"started"`) {
+			t.Errorf("expected response to contain 'started', got %s", w.Body.String())
+		}
+	}
+
 

@@ -8,20 +8,27 @@
 ## 🌟 核心特性
 
 - ⚡ **运行零依赖**：编译为一个独立的绿色静态二进制可执行文件（`deploy.exe` / `deploy`，约 6MB），无需任何外部运行时依赖，随拷随用。
-- 🖥️ **内置可视化 Web 控制台**：运行 `./deploy.exe -web` 即刻在浏览器中图形化编辑服务配置单元、增删复制、表单校验并**在线一键执行部署**。
-- 🚀 **完全并发执行**：基于 Go Goroutine 原生并发调度，多台服务器同时部署，执行速度成倍提升。
-- 🎨 **多色流式终端 / 网页实时日志**：并发执行时为每个服务节点分配专属终端颜色标签（如 `[api-server-01]`、`[web-server-02]`），网页端通过 SSE（Server-Sent Events）实时流式呈现。
-- 📦 **内置 SFTP 文件同步**：支持递归上传目录或单个文件，支持通配符排除规则（如 `.git`, `node_modules`, `*.log`），自动创建远端层级目录。
+- 🎯 **多场景与预设编排 (Scenarios)**：支持预定义部署场景（如 `prod`、`test`、`quick-restart`），支持环境与分组的灵活绑定与一键切换。
+- 📁 **多分组组织与分别部署 (Groups)**：服务按组分类（如 `infra`、`backend`、`frontend`），支持命令行按组（`-g`）或 Web 控制台按组分别一键部署。
+- 🛠️ **多部署任务类型适配 (Task Types)**：
+  - `standard`（默认）：全流程（构建 -> SSH -> 远端前置 -> SFTP传文件 -> 远端后置 -> 本地后置）
+  - `exec_only`：纯命令执行型（自动跳过 SFTP，专用于数据库迁移、Docker 重启、清理缓存等运维任务）
+  - `sync_only`：纯文件同步型（仅传输文件，跳过远端重启/命令）
+- 🌊 **分阶段波次编排与熔断保护 (Stages)**：支持按 `stage`（阶段号）升序分波次串行执行（阶段内并发），前置阶段失败自动熔断阻断后续阶段，杜绝雪崩事故。
+- 🖥️ **内置可视化 Web 控制台**：运行 `./deploy.exe -web` 即刻在浏览器中图形化管理多场景、多分组服务、增删复制并**在线一键分别部署**。
+- 🚀 **完全并发执行与 Worker Pool 限流**：基于 Go Goroutine 原生并发调度，支持通过 `-j` 控制最大并发 Worker 数。
+- 🎨 **多色流式终端 / 网页实时日志**：并发执行时为每个服务节点分配专属终端颜色标签，网页端通过 SSE 实时流式呈现。
+- 📦 **内置 SFTP 文件同步**：支持递归上传目录或单个文件，支持通配符排除规则，自动创建远端层级目录。
 - 🔗 **完整生命周期钩子体系**：
-  1. 🌟 **`hooks.preDeploy`（全局批次前置）**：并发启动前在本地统一执行一次（如全局 `npm run build` 打包、代码检出），失败即直接阻断整个批次，绝不触碰远程服务器
+  1. 🌟 **`hooks.preDeploy`（全局批次前置）**：并发启动前在本地统一执行一次，失败即直接阻断整个批次
   2. `preUploadLocal`：单个节点上传前本地执行命令
-  3. 建立安全 SSH / SFTP 会话（支持密码、密钥及可选的 SHA256 指纹强校验）
-  4. `preUploadRemote`：上传前远端执行命令（如停止老服务、备份数据、创建目录）
+  3. 建立安全 SSH 会话（支持密码、密钥及可选的 SHA256 指纹强校验）
+  4. `preUploadRemote`：上传前远端执行命令
   5. SFTP 文件传输（内置高危根目录防清空保护）
-  6. `postUploadRemote`：上传后远端执行命令（如赋权、解压、启动服务、健康检查）
+  6. `postUploadRemote`：上传后远端执行命令
   7. `postUploadLocal`：单个节点上传后本地执行命令
-  8. 🌟 **`hooks.postDeploy`（全局批次后置）**：当且仅当全部选定节点成功部署后在本地执行一次（如发送企业微信通知、清理临时缓存）
-- 📊 **可视化统计看板**：执行结束后自动输出汇总表格，直观展示每个服务器单元的状态（`SUCCESS` / `FAILED`）、耗时及错误详情。
+  8. 🌟 **`hooks.postDeploy`（全局批次后置）**：全部选定节点成功部署后在本地执行一次
+- 📊 **可视化统计看板**：执行结束后自动输出汇总表格，直观展示每个服务器单元的 Group、Type、Stage、状态（`SUCCESS` / `FAILED`）、耗时及详情。
 
 ---
 
@@ -53,16 +60,24 @@
 # 1. 快速生成示例配置文件 deploy.example.json
 ./deploy.exe -init
 
-# 2. 默认执行部署（自动读取当前目录下的 deploy.json 或 deploy.yaml，全并发运行）
+# 2. 默认执行全量部署（自动读取 deploy.json 或 deploy.yaml，按 Stage 波次执行）
 ./deploy.exe
 
-# 3. 指定特定的配置文件
-./deploy.exe -c ./custom-config.json
+# 3. 按预定义场景部署（如全量生产发布、仅更新后端、快速维护）
+./deploy.exe -s prod
+./deploy.exe -s backend-only
 
-# 4. 指定仅部署某些服务单元（多个用逗号隔开）
+# 4. 按指定业务分组分别部署（支持逗号分隔）
+./deploy.exe -g frontend
+./deploy.exe -g infra,backend -j 5
+
+# 5. 按任务类型过滤执行（如仅执行纯命令任务：数据库迁移/服务重启）
+./deploy.exe --type exec_only
+
+# 6. 指定仅部署某些具体服务单元（多个用逗号隔开）
 ./deploy.exe -t api-server-01,web-server-02
 
-# 5. 临时切换为顺序串行执行（便于单步排查错误）
+# 7. 临时切换为顺序串行执行（便于单步排查错误）
 ./deploy.exe -p=false
 ```
 
@@ -155,8 +170,12 @@
 | `-web` | - | 关闭 | 启动 Web 图形化配置控制台并自动打开浏览器 |
 | `-addr <addr>` | - | `:8080` | Web 控制台监听地址，需配合 `-web` 使用（如 `:9000`） |
 | `--config <file>` | `-c` | `deploy.json` / `deploy.yaml` | 指定配置文件路径 |
-| `--target <names>`| `-t` | (全部服务) | 过滤仅部署指定的服务名称，逗号隔开 |
+| `--scenario <name>` | `-s` | - | 指定预定义场景名称（如 `prod`、`backend-only`） |
+| `--group <names>` | `-g` | (全部组) | 过滤仅部署指定的分组名称，支持逗号分隔（如 `frontend,backend`） |
+| `--target <names>`| `-t` | (全部服务) | 过滤仅部署指定的服务名称，支持逗号分隔 |
+| `--type <type>` | - | (全部类型) | 按任务类型过滤：`standard`, `exec_only`, `sync_only` |
 | `--parallel <bool>`| `-p` | `true` | 覆盖配置文件中的并发设置（`true` 并发，`false` 串行） |
+| `--max-workers <n>`| `-j` | `10` | 每个阶段内的最大并发 Worker 数（0 为无限制） |
 | `-init` | - | - | 快速生成模板配置文件 `deploy.example.json` |
 | `--version` | `-v` | - | 查看工具版本 |
 | `--help` | `-h` | - | 查看完整帮助信息 |

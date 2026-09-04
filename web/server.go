@@ -233,6 +233,9 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		Scenario       string   `json:"scenario,omitempty"`
+		TargetGroups   []string `json:"targetGroups,omitempty"`
+		TargetTypes    []string `json:"targetTypes,omitempty"`
 		TargetServices []string `json:"targetServices,omitempty"`
 		Parallel       *bool    `json:"parallel,omitempty"`
 		MaxWorkers     *int     `json:"maxWorkers,omitempty"`
@@ -246,6 +249,9 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 
 	opts := deployer.DeployOptions{
 		Parallel:       req.Parallel,
+		Scenario:       req.Scenario,
+		TargetGroups:   req.TargetGroups,
+		TargetTypes:    req.TargetTypes,
 		TargetServices: req.TargetServices,
 		MaxWorkers:     maxWorkers,
 	}
