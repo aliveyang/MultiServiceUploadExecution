@@ -3,576 +3,1230 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>多服务器部署控制台</title>
+  <title>多服务器部署控制台 - 现代自动化运维工作台</title>
   <style>
     :root {
-      --bg: #f5f7fa;
+      --bg: #f8fafc;
       --panel: #ffffff;
-      --panel-2: #f8fafc;
-      --border: #e4e9f0;
+      --panel-2: #f1f5f9;
+      --panel-3: #e2e8f0;
+      --border: #e2e8f0;
       --border-strong: #cbd5e1;
-      --text: #17233b;
+      --text: #0f172a;
+      --text-secondary: #334155;
       --muted: #64748b;
       --faint: #94a3b8;
+      
       --accent: #2563eb;
       --accent-hover: #1d4ed8;
       --accent-soft: rgba(37, 99, 235, 0.08);
-      --green: #16a34a;
-      --green-soft: rgba(22, 163, 74, 0.1);
-      --red: #dc2626;
-      --red-soft: rgba(220, 38, 38, 0.08);
-      --amber: #d97706;
-      --amber-soft: rgba(217, 119, 6, 0.1);
-      --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
-      --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.14);
+      --accent-border: rgba(37, 99, 235, 0.25);
+      
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.1);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.1);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.12);
+      --purple: #8b5cf6;
+      --purple-soft: rgba(139, 92, 246, 0.1);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --shadow-lg: 0 10px 25px -3px rgba(15, 23, 42, 0.15);
+      --radius: 8px;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
+    html, body { height: 100%; width: 100%; overflow: hidden; }
     body {
       background: var(--bg);
       color: var(--text);
-      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
     }
 
-    /* ===== 顶栏 ===== */
-    header {
-      flex: 0 0 auto;
+    /* ===== 顶部导航栏 (Command Bar) ===== */
+    header.topbar {
+      flex: 0 0 54px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      z-index: 30;
+      user-select: none;
+    }
+
+    .brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 0 16px;
-      height: 52px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      z-index: 10;
+      font-weight: 700;
+      font-size: 14.5px;
+      color: var(--text);
+      white-space: nowrap;
+      letter-spacing: -0.2px;
     }
-    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; white-space: nowrap; color: var(--text); }
-    .brand .logo {
-      width: 26px; height: 26px; border-radius: 7px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1);
-      display: grid; place-items: center; font-size: 13px;
-      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
     }
-    .save-status {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11.5px; padding: 3px 8px; border-radius: 6px;
-      user-select: none; transition: .2s;
+    
+    .save-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+      transition: all .2s;
     }
-    .save-status.clean { color: var(--green); background: var(--green-soft); }
-    .save-status.dirty { color: var(--amber); background: var(--amber-soft); font-weight: 600; }
-    .save-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .save-badge.clean {
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .save-badge.dirty {
+      color: var(--amber);
+      background: var(--amber-soft);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      font-weight: 600;
+    }
+    .save-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .header-sep {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .scenario-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--panel-2);
+      padding: 4px 10px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .scenario-pill select {
+      background: transparent;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+    }
+
+    .parallel-toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      transition: .15s;
+    }
+    .parallel-toggle:hover { border-color: var(--border-strong); color: var(--text); }
+    .parallel-toggle input { display: none; }
+    .parallel-toggle .sw-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+      transition: .2s;
+    }
+    .parallel-toggle input:checked + .sw-dot {
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
 
     .spacer { flex: 1; }
-    .parallel-toggle {
-      display: flex; align-items: center; gap: 6px;
-      color: var(--muted); font-size: 12px; cursor: pointer; user-select: none;
-      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
-      background: var(--panel-2); transition: .15s;
-    }
-    .parallel-toggle:hover { border-color: var(--border-strong); }
-    .parallel-toggle input { display: none; }
-    .parallel-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; transition: .2s; }
-    .parallel-toggle input:checked + .dot { background: var(--green); box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
 
+    /* 通用按钮 */
     .btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
-      background: var(--panel); color: var(--text);
-      font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
-      transition: background .15s, border-color .15s, box-shadow .15s;
-      box-shadow: var(--shadow);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 13px;
+      border-radius: 7px;
+      border: 1px solid var(--border-strong);
+      background: var(--panel);
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .15s ease;
+      box-shadow: var(--shadow-sm);
     }
-    .btn:hover { background: var(--panel-2); border-color: var(--border-strong); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3); }
-    .btn.primary:hover { background: var(--accent-hover); }
-    .btn.danger-ghost { color: var(--red); }
-    .btn.danger-ghost:hover { border-color: rgba(220, 38, 38, 0.35); background: var(--red-soft); }
-    .btn.sm-btn { padding: 3px 8px; font-size: 11.5px; border-radius: 5px; }
-    .btn.picker-btn { background: var(--panel); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-    .btn.picker-btn:hover { background: var(--accent-soft); }
-    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn:hover { background: var(--panel-2); color: var(--text); border-color: #94a3b8; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-color: #1d4ed8;
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    }
+    .btn.primary:hover { background: linear-gradient(135deg, #1d4ed8, #1e40af); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }
+    .btn.danger-ghost { color: var(--red); border-color: transparent; background: transparent; box-shadow: none; }
+    .btn.danger-ghost:hover { background: var(--red-soft); border-color: rgba(239, 68, 68, 0.25); }
+    .btn.sm-btn { padding: 3px 9px; font-size: 11.5px; border-radius: 6px; }
+    .btn.picker-btn { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600; }
+    .btn.picker-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-    /* ===== 主体：侧边栏 + 编辑区 ===== */
-    main { flex: 1; display: flex; min-height: 0; }
+    /* ===== 工作区主体 (Main Workspace) ===== */
+    .workspace {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
 
-    aside {
-      flex: 0 0 260px;
-      display: flex; flex-direction: column;
+    /* 侧边导航栏 (Aside) */
+    aside.nav-sidebar {
+      flex: 0 0 290px;
+      width: 290px;
+      display: flex;
+      flex-direction: column;
       border-right: 1px solid var(--border);
       background: var(--panel);
       min-height: 0;
+      z-index: 10;
     }
-    .aside-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px 6px;
-      color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .8px;
-      text-transform: uppercase;
-    }
-    .aside-head .count { background: #eef2f7; border-radius: 9px; padding: 0 7px; font-size: 10.5px; color: var(--muted); }
-    .aside-search { padding: 4px 10px 8px; }
-    .aside-search input {
-      width: 100%; border: 1px solid var(--border); border-radius: 6px;
-      padding: 5px 8px; font-size: 11.5px; background: var(--panel-2); color: var(--text);
-      outline: none; transition: .15s;
-    }
-    .aside-search input:focus { border-color: var(--accent); background: #fff; }
 
-    .svc-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+    .sidebar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 6px;
+    }
+    .sidebar-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sidebar-count {
+      background: var(--panel-2);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    
+    .sidebar-search-box {
+      padding: 6px 12px 10px;
+    }
+    .sidebar-search-box input {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      padding: 6px 10px;
+      font-size: 12px;
+      background: var(--panel-2);
+      color: var(--text);
+      outline: none;
+      transition: all .15s;
+    }
+    .sidebar-search-box input:focus {
+      border-color: var(--accent);
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px 12px;
+    }
+
+    /* 服务项列表卡片 */
     .svc-item {
       position: relative;
-      padding: 8px 10px 8px 14px;
+      padding: 9px 12px;
       border-radius: 8px;
       cursor: pointer;
       margin-bottom: 4px;
       border: 1px solid transparent;
-      transition: background .15s, border-color .15s, box-shadow .15s;
+      background: transparent;
+      transition: all .15s;
     }
-    .svc-item:hover { background: #f1f5f9; }
+    .svc-item:hover {
+      background: #f1f5f9;
+      border-color: var(--border);
+    }
     .svc-item.active {
       background: #eff6ff;
-      border-color: rgba(37, 99, 235, 0.35);
-      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
+      border-color: #93c5fd;
+      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08);
     }
-    .svc-item .name { font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px; overflow: hidden; color: var(--text); }
-    .svc-item .name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .svc-item .meta { color: var(--muted); font-size: 11px; margin-top: 3px; display: flex; gap: 6px; align-items: center; }
-    .svc-item .del {
-      position: absolute; right: 6px; top: 6px;
-      width: 18px; height: 18px; border-radius: 4px;
-      display: none; place-items: center;
-      color: var(--red); font-size: 12px; background: transparent; border: none; cursor: pointer;
+    .svc-item .name-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
     }
-    .svc-item:hover .del { display: grid; }
-    .svc-item .del:hover { background: var(--red-soft); }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
-    .status-dot.on { background: var(--green); box-shadow: 0 0 0 2.5px rgba(22, 163, 74, 0.15); }
-    .status-dot.off { background: #cbd5e1; }
+    .svc-item .name-row span.svc-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .svc-item .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
 
-    /* 分组与类型徽标 */
-    .group-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 4px 4px; margin-top: 6px;
-      font-size: 11px; font-weight: 700; color: var(--muted);
-      border-bottom: 1px dashed var(--border); margin-bottom: 5px;
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      transition: all .2s;
     }
-    .group-header .gh-title { display: flex; align-items: center; gap: 4px; }
-    .group-header .gh-deploy-btn {
-      font-size: 10px; padding: 2px 6px; border-radius: 4px;
-      background: var(--panel); border: 1px solid var(--border);
-      color: var(--accent); cursor: pointer; transition: .15s;
-    }
-    .group-header .gh-deploy-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
-    .type-pill {
-      font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 10px;
-      text-transform: uppercase; letter-spacing: .3px;
-    }
-    .type-pill.standard { background: #e0f2fe; color: #0369a1; }
-    .type-pill.exec_only { background: #fef3c7; color: #b45309; }
-    .type-pill.sync_only { background: #dcfce7; color: #15803d; }
+    .status-dot.ok { background: var(--green); box-shadow: 0 0 0 2.5px rgba(16, 185, 129, 0.2); }
+    .status-dot.off { background: #cbd5e1; }
+    .status-dot.err { background: var(--red); box-shadow: 0 0 0 2.5px rgba(239, 68, 68, 0.2); }
+
     .stage-pill {
-      font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 4px;
-      background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid var(--border);
+      font-family: Consolas, monospace;
     }
-    .host-tag { background: rgba(15, 23, 42, 0.05); padding: 0 4px; border-radius: 4px; font-family: Consolas, monospace; }
-    .aside-add {
-      margin: 8px 10px; padding: 8px;
-      border: 1px dashed var(--border-strong); border-radius: 8px;
-      background: transparent; color: var(--muted);
-      font-size: 12px; font-weight: 500; cursor: pointer; text-align: center;
+    .type-pill {
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: .2px;
+    }
+    .type-pill.standard { background: #e0f2fe; color: #0284c7; }
+    .type-pill.exec_only { background: #fef3c7; color: #d97706; }
+    .type-pill.sync_only { background: #dcfce7; color: #16a34a; }
+
+    .host-tag {
+      background: var(--panel-2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 10.5px;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 6px 5px;
+      margin-top: 8px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      border-bottom: 1px dashed var(--border);
+      margin-bottom: 5px;
+    }
+    .group-header .gh-title {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+    .group-header .gh-btns {
+      display: flex;
+      gap: 4px;
+    }
+    .group-header .gh-btn {
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      cursor: pointer;
       transition: .15s;
     }
-    .aside-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-
-    /* ===== 编辑区 ===== */
-    .editor { flex: 1; overflow-y: auto; min-width: 0; }
-    .editor-inner { max-width: 1020px; padding: 16px 22px 40px; }
-
-    .ed-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .ed-head input.svc-name {
-      background: transparent; border: none; border-bottom: 1px dashed transparent;
-      color: var(--text); font-size: 18px; font-weight: 700; padding: 2px 4px; min-width: 80px; flex: 0 1 auto;
+    .group-header .gh-btn:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
     }
-    .ed-head input.svc-name:hover, .ed-head input.svc-name:focus { border-bottom-color: var(--border-strong); outline: none; }
-    .ed-head .chip {
-      font-size: 11px; color: var(--muted);
-      border: 1px solid var(--border); background: var(--panel);
-      border-radius: 20px; padding: 2px 10px;
-      font-family: Consolas, monospace; box-shadow: var(--shadow);
-    }
-    .ed-head .enable-switch { margin-left: auto; }
 
-    .tabs {
-      display: inline-flex; gap: 2px;
-      background: #eaeff6; border: 1px solid var(--border);
-      border-radius: 9px; padding: 3px; margin: 12px 0 16px;
+    .sidebar-add-btn {
+      margin: 8px 12px 14px;
+      padding: 8px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: .15s;
     }
-    .tab {
-      padding: 6px 16px; border-radius: 6px; border: none;
-      background: transparent; color: var(--muted);
-      font-size: 12.5px; font-weight: 500; cursor: pointer; transition: .15s;
+    .sidebar-add-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
-    .tab:hover { color: var(--text); }
-    .tab.active { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12); }
 
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-
-    .grid { display: grid; gap: 14px 16px; }
-    .g2 { grid-template-columns: repeat(2, 1fr); }
-    .g3 { grid-template-columns: repeat(3, 1fr); }
-    @media (max-width: 960px) { .g3 { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 680px) { .g2, .g3 { grid-template-columns: 1fr; } }
-
-    .field label { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
-    .field label span.t { display: inline-flex; align-items: center; gap: 3px; }
-    .field label b { color: var(--accent); font-weight: normal; }
-    .field input, .field textarea, .hook-card textarea {
-      width: 100%;
-      background: var(--panel); border: 1px solid var(--border-strong);
-      color: var(--text); border-radius: 8px;
-      padding: 7px 11px; font-size: 12.5px;
-      transition: border-color .15s, box-shadow .15s;
+    /* ===== 中央主工作区 (Editor) ===== */
+    .editor-pane {
+      flex: 1;
+      overflow-y: auto;
+      min-width: 0;
+      position: relative;
+      background: var(--bg);
     }
-    .field input:focus, .field textarea:focus, .hook-card textarea:focus {
-      outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
+    .editor-container {
+      max-width: 1080px;
+      padding: 18px 26px 80px;
+      margin: 0 auto;
     }
-    .field textarea {
-      font-family: "Cascadia Code", Consolas, monospace;
-      resize: vertical; min-height: 80px; line-height: 1.6;
-    }
-    .field .hint { font-size: 10.5px; color: var(--faint); margin-top: 4px; }
 
-    .input-action-group { display: flex; gap: 6px; align-items: stretch; }
-    .input-action-group input { flex: 1; }
-
-    /* 危险路径告警 */
-    .danger-alert {
-      display: none; align-items: center; gap: 6px;
-      padding: 6px 10px; margin-top: 6px; border-radius: 6px;
-      background: var(--red-soft); border: 1px solid rgba(220, 38, 38, 0.25);
-      color: var(--red); font-size: 11.5px; font-weight: 500;
+    /* 服务概览卡片 (Overview Banner) */
+    .overview-banner {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 16px;
     }
-    .danger-alert.show { display: flex; }
-
-    .inline-check {
-      display: flex; align-items: center; gap: 8px; cursor: pointer;
-      padding: 7px 0; color: var(--text); font-size: 12.5px; user-select: none;
+    .ob-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
-    .inline-check input { display: none; }
-    .checkbox {
-      width: 16px; height: 16px; border-radius: 5px;
-      border: 1px solid var(--border-strong); background: var(--panel);
-      display: grid; place-items: center; transition: .15s; flex: 0 0 auto;
+    .ob-head input.svc-title-input {
+      background: transparent;
+      border: none;
+      border-bottom: 2px dashed transparent;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      padding: 2px 4px;
+      min-width: 140px;
+      transition: border .15s;
     }
-    .checkbox svg { width: 10px; height: 10px; opacity: 0; transition: .15s; }
-    .inline-check input:checked + .checkbox { background: var(--accent); border-color: var(--accent); }
-    .inline-check input:checked + .checkbox svg { opacity: 1; }
+    .ob-head input.svc-title-input:hover,
+    .ob-head input.svc-title-input:focus {
+      border-bottom-color: var(--accent);
+      outline: none;
+    }
 
-    /* 钩子四象限 */
-    .hook-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 800px) { .hook-grid { grid-template-columns: 1fr; } }
-    .hook-card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px 14px 14px;
+    .enable-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 500;
+      user-select: none;
+      margin-left: auto;
+    }
+    .enable-toggle input { display: none; }
+    .enable-toggle .checkbox-box {
+      width: 17px;
+      height: 17px;
+      border-radius: 5px;
+      border: 1.5px solid var(--border-strong);
+      background: var(--panel);
+      display: grid;
+      place-items: center;
+      transition: .15s;
+    }
+    .enable-toggle input:checked + .checkbox-box {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .enable-toggle .checkbox-box svg {
+      width: 10px;
+      height: 10px;
+      opacity: 0;
+      transition: .15s;
+    }
+    .enable-toggle input:checked + .checkbox-box svg {
+      opacity: 1;
+    }
+
+    .ob-meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--panel-2);
+      flex-wrap: wrap;
+    }
+    .meta-field {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .meta-field label {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .meta-field input, .meta-field select {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+    }
+    .meta-field input:focus, .meta-field select:focus {
+      border-color: var(--accent);
+      background: #ffffff;
+    }
+
+    /* ===== 流水线导航步进条 (Pipeline Flow Stepper) ===== */
+    .pipeline-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 16px;
+      overflow-x: auto;
+      padding: 4px 2px;
+    }
+    .step-pill {
+      flex: 1;
+      min-width: 140px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 8px 12px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: all .15s;
+      user-select: none;
+    }
+    .step-pill.group-pill {
+      background: #faf5ff;
+      border-color: #e9d5ff;
+    }
+    .step-pill.group-pill:hover {
+      border-color: #8b5cf6;
+    }
+    .step-pill.group-pill .num {
+      background: #f3e8ff;
+      color: #7c3aed;
+    }
+    .step-pill.group-pill:hover .num {
+      background: #7c3aed;
+      color: #ffffff;
+    }
+    .step-pill:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
       box-shadow: var(--shadow);
     }
-    .hook-card .hc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
-    .hook-card .hc-left { display: flex; align-items: center; gap: 6px; }
-    .hook-card .step {
-      width: 18px; height: 18px; border-radius: 6px; font-size: 10.5px; font-weight: 600;
-      display: grid; place-items: center; color: #fff; flex: 0 0 auto;
+    .step-pill .num {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 11px;
+      display: grid;
+      place-items: center;
+      transition: all .15s;
     }
-    .hook-card .where { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
-    .where.local { background: rgba(37, 99, 235, 0.09); color: var(--accent); }
-    .where.remote { background: rgba(22, 163, 74, 0.1); color: var(--green); }
-    .hook-card textarea {
-      width: 100%;
-      min-height: 125px; background: var(--panel-2);
-      font-family: "Cascadia Code", Consolas, monospace;
-      font-size: 12px; line-height: 1.6;
-      resize: vertical;
+    .step-pill:hover .num {
+      background: var(--accent);
+      color: #ffffff;
     }
-    .flow-hint {
-      grid-column: 1 / -1;
-      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      color: var(--faint); font-size: 11px; padding: 2px 2px 0;
+    .step-pill .info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
-    .flow-hint b { color: var(--muted); font-weight: 600; }
+    .step-pill .title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .step-pill .desc {
+      font-size: 10.5px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .step-arrow {
+      color: var(--faint);
+      font-weight: bold;
+      font-size: 14px;
+    }
 
-    /* 空状态 */
-    .empty {
-      height: 100%; display: grid; place-items: center; text-align: center;
+    /* ===== 五阶段流水线卡片 (Pipeline Step Cards) ===== */
+    .step-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      scroll-margin-top: 14px;
+      transition: border-color .2s;
+    }
+    .step-card.group-card {
+      border-left: 4px solid #8b5cf6;
+      background: linear-gradient(to right, rgba(139, 92, 246, 0.02), var(--panel));
+    }
+    .step-card:hover {
+      border-color: var(--border-strong);
+    }
+    .sc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--panel-2);
+    }
+    .sc-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sc-badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+    }
+    .sc-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sc-env-tag {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+    .sc-env-tag.local { background: rgba(37, 99, 235, 0.09); color: var(--accent); }
+    .sc-env-tag.remote { background: rgba(16, 185, 129, 0.1); color: var(--green); }
+
+    .field-grid {
+      display: grid;
+      gap: 12px 16px;
+    }
+    .g2 { grid-template-columns: repeat(2, 1fr); }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+    .g4 { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 960px) { .g3, .g4 { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 680px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .form-group label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 600;
       color: var(--muted);
     }
-    .empty .icon { font-size: 40px; margin-bottom: 12px; opacity: .8; }
-    .empty p { margin-bottom: 16px; font-size: 13.5px; line-height: 1.8; }
-
-    /* ===== 通用交互选择模态框 (Picker Modal) ===== */
-    .modal-backdrop {
-      position: fixed; inset: 0; z-index: 100;
-      background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px);
-      display: none; place-items: center; padding: 20px;
+    .form-group label b { color: var(--accent); }
+    .form-group input, .form-group textarea {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-size: 12.5px;
+      transition: all .15s;
     }
-    .modal-backdrop.show { display: grid; }
-    
-    .picker-dialog {
-      width: min(720px, 95vw); max-height: min(620px, 88vh);
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; display: flex; flex-direction: column;
-      box-shadow: var(--shadow-lg); overflow: hidden; animation: zoomIn .15s ease-out;
+    .form-group input:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
     }
-    @keyframes zoomIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-
-    .pd-head {
-      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+    .form-group textarea {
+      font-family: "Cascadia Code", Consolas, monospace;
+      resize: vertical;
+      min-height: 85px;
+      line-height: 1.6;
     }
-    .pd-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--text); }
-    .pd-close {
-      width: 26px; height: 26px; border-radius: 6px; border: none;
-      background: transparent; color: var(--muted); font-size: 16px;
-      display: grid; place-items: center; cursor: pointer; transition: .15s;
-    }
-    .pd-close:hover { background: #e2e8f0; color: var(--text); }
-
-    .pd-toolbar {
-      padding: 10px 18px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px; background: #fff;
-    }
-    .pd-search {
-      flex: 1; border: 1px solid var(--border-strong); border-radius: 6px;
-      padding: 6px 10px; font-size: 12px; outline: none; background: var(--panel-2);
-    }
-    .pd-search:focus { border-color: var(--accent); background: #fff; }
-    .pd-cats { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0; }
-    .pd-cat-btn {
-      padding: 4px 10px; border-radius: 5px; border: 1px solid transparent;
-      font-size: 11.5px; background: var(--panel-2); color: var(--muted); cursor: pointer; white-space: nowrap; transition: .15s;
-    }
-    .pd-cat-btn:hover { color: var(--text); border-color: var(--border-strong); }
-    .pd-cat-btn.active { background: var(--accent); color: #fff; font-weight: 600; border-color: var(--accent); }
-
-    .pd-body { flex: 1; overflow-y: auto; padding: 12px 18px; min-height: 240px; }
-    .pd-list { display: flex; flex-direction: column; gap: 8px; }
-    .pd-item {
-      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
-      border: 1px solid var(--border); border-radius: 8px; background: #fff;
-      cursor: pointer; transition: .15s; user-select: none;
-    }
-    .pd-item:hover { border-color: var(--accent); background: #f8faff; box-shadow: 0 2px 6px rgba(37,99,235,0.06); }
-    .pd-item.selected { border-color: var(--accent); background: #eff6ff; }
-    .pd-item-check { margin-top: 3px; }
-    .pd-item-main { flex: 1; min-width: 0; }
-    .pd-item-title { font-weight: 600; font-size: 12.5px; color: var(--text); display: flex; align-items: center; gap: 8px; }
-    .pd-item-cat { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #eef2f7; color: var(--muted); }
-    .pd-item-desc { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    .pd-item-code {
-      margin-top: 6px; background: #1e293b; color: #93c5fd; padding: 6px 10px;
-      border-radius: 6px; font-family: "Cascadia Code", Consolas, monospace; font-size: 11.5px;
-      white-space: pre-wrap; word-break: break-all;
+    .form-group .hint {
+      font-size: 11px;
+      color: var(--faint);
     }
 
-    .pd-foot {
-      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 18px; border-top: 1px solid var(--border); background: var(--panel-2);
+    .danger-banner {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border-radius: 7px;
+      background: var(--red-soft);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: var(--red);
+      font-size: 11.5px;
+      font-weight: 600;
+      margin-top: 6px;
     }
-    .pd-foot-left { font-size: 11.5px; color: var(--muted); }
-    .pd-foot-btns { display: flex; gap: 8px; }
+    .danger-banner.show { display: flex; }
 
-    /* ===== 部署终端弹窗 ===== */
-    .terminal-modal {
-      width: min(920px, 100%); height: min(640px, 90vh);
-      background: #0f172a; border: 1px solid #1e293b;
-      border-radius: 12px; display: flex; flex-direction: column;
-      overflow: hidden; box-shadow: var(--shadow-lg); position: relative;
+    /* 空状态提示 */
+    .empty-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 20px;
+      text-align: center;
+      color: var(--muted);
     }
-    .modal-head {
-      flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      padding: 9px 14px; background: #1e293b; border-bottom: 1px solid #0f172a;
+    .empty-placeholder .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.8;
     }
-    .modal-head .t { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 7px; color: #e2e8f0; }
-    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; animation: pulse 1.2s infinite; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-    .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #334155; color: #cbd5e1; }
-    .badge.running { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
-    .badge.ok { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
-    .badge.fail { background: rgba(248, 113, 113, 0.2); color: #fca5a5; }
 
-    .term-filter {
-      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
-      color: #e2e8f0; font-size: 11.5px; padding: 3px 8px; width: 150px; outline: none;
+    /* ===== 底部终端抽屉 (Bottom Terminal Drawer) ===== */
+    .terminal-drawer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #090d16;
+      border-top: 1px solid #1e293b;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+      transition: height .2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .term-filter:focus { border-color: #60a5fa; }
+    .terminal-drawer.collapsed { height: 36px !important; }
+    .terminal-drawer.split { height: 380px; }
+    .terminal-drawer.maximized { height: calc(100vh - 54px); }
 
-    .terminal {
-      flex: 1; overflow-y: auto; padding: 12px 16px;
+    .drawer-bar {
+      height: 36px;
+      flex: 0 0 36px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      cursor: pointer;
+      user-select: none;
+    }
+    .drawer-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .live-pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .drawer-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: #334155;
+      color: #cbd5e1;
+    }
+    .drawer-badge.running { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
+    .drawer-badge.ok { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+    .drawer-badge.fail { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+    .filter-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      max-width: 400px;
+    }
+    .filter-pill-btn {
+      padding: 2px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #94a3b8;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: .15s;
+    }
+    .filter-pill-btn:hover { color: #f8fafc; border-color: #64748b; }
+    .filter-pill-btn.active { background: #2563eb; color: #ffffff; border-color: #3b82f6; font-weight: 600; }
+
+    .drawer-search {
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      color: #e2e8f0;
+      font-size: 11.5px;
+      padding: 3px 8px;
+      width: 140px;
+      outline: none;
+    }
+    .drawer-search:focus { border-color: #3b82f6; }
+
+    .drawer-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+    .drawer-btn {
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 5px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #cbd5e1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: .15s;
+    }
+    .drawer-btn:hover { background: #334155; color: #ffffff; }
+
+    .terminal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
       font: 12px/1.65 "Cascadia Code", Consolas, monospace;
-      white-space: pre-wrap; word-break: break-all; color: #c7d5ea;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #cbd5e1;
+      background: #090d16;
       position: relative;
     }
-    .scroll-bottom-btn {
-      position: absolute; bottom: 44px; right: 24px; z-index: 10;
-      background: #2563eb; color: #fff; border-radius: 20px; padding: 5px 12px;
-      font-size: 11.5px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      display: none; align-items: center; gap: 4px; transition: .15s;
+    .term-scroll-down-btn {
+      position: absolute;
+      bottom: 16px;
+      right: 24px;
+      z-index: 10;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      display: none;
+      align-items: center;
+      gap: 4px;
     }
-    .scroll-bottom-btn:hover { background: #1d4ed8; }
-    .scroll-bottom-btn.show { display: flex; }
+    .term-scroll-down-btn.show { display: flex; }
 
-    .modal-foot { flex: 0 0 auto; padding: 7px 14px; border-top: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .modal-foot .btn { background: #1e293b; border-color: #334155; color: #cbd5e1; box-shadow: none; font-size: 11.5px; padding: 4px 9px; }
-    .modal-foot .btn:hover { background: #334155; }
-
-    /* 终端 ANSI 颜色 */
-    .a-red { color: #f87171; }
-    .a-green { color: #4ade80; }
+    /* ANSI 终端语法颜色 */
+    .a-red { color: #f87171; font-weight: 600; }
+    .a-green { color: #4ade80; font-weight: 600; }
     .a-yellow { color: #facc15; }
     .a-blue { color: #93c5fd; }
     .a-magenta { color: #d8b4fe; }
     .a-cyan { color: #67e8f9; }
     .a-dim { color: #64748b; }
-    .a-b { font-weight: 600; }
+    .a-b { font-weight: 700; }
 
-    /* Toast */
-    .toast {
-      position: fixed; top: 62px; left: 50%; transform: translate(-50%, -8px);
-      padding: 8px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
-      z-index: 300; opacity: 0; pointer-events: none;
-      transition: opacity .25s, transform .25s;
+    /* ===== 预设命令/模态选择框 (Picker Modal) ===== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(4px);
+      display: none;
+      place-items: center;
+      padding: 20px;
+    }
+    .modal-backdrop.show { display: grid; }
+
+    .picker-card {
+      width: min(740px, 95vw);
+      max-height: min(620px, 88vh);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      animation: zoomModal .15s ease-out;
+    }
+    @keyframes zoomModal { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+
+    .pc-head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+    }
+    .pc-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pc-close {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 16px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .pc-close:hover { background: #e2e8f0; color: var(--text); }
+
+    .pc-filter-bar {
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #ffffff;
+    }
+    .pc-search-input {
+      flex: 1;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      background: var(--panel-2);
+      outline: none;
+    }
+    .pc-search-input:focus { border-color: var(--accent); background: #ffffff; }
+
+    .pc-category-tabs {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .pc-cat-btn {
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      font-size: 11.5px;
+      background: var(--panel-2);
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: .15s;
+    }
+    .pc-cat-btn:hover { color: var(--text); border-color: var(--border); }
+    .pc-cat-btn.active { background: var(--accent); color: #ffffff; font-weight: 600; }
+
+    .pc-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px;
+      min-height: 250px;
+    }
+    .pc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pc-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      cursor: pointer;
+      transition: all .15s;
+      user-select: none;
+    }
+    .pc-item:hover {
+      border-color: var(--accent);
+      background: #f8faff;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
+    }
+    .pc-item.selected {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+    .pc-item-code {
+      margin-top: 6px;
+      background: #0f172a;
+      color: #93c5fd;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 11.5px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .pc-foot {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--panel-2);
+    }
+
+    /* Toast 通知 */
+    .toast-msg {
+      position: fixed;
+      top: 68px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      z-index: 300;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
       box-shadow: var(--shadow-lg);
     }
-    .toast.show { opacity: 1; transform: translate(-50%, 0); }
-    .toast.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
-    .toast.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .toast-msg.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast-msg.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .toast-msg.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
 
-    /* 滚动条 */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-thumb { background: #d3dce6; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #b6c2d1; }
+    /* 滚动条美化 */
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     ::-webkit-scrollbar-track { background: transparent; }
-
-    @media (max-width: 760px) {
-      main { flex-direction: column; }
-      aside { flex: 0 0 auto; flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--border); }
-      .aside-head, .aside-search { display: none; }
-      .svc-list { display: flex; padding: 8px; overflow-x: auto; }
-      .svc-item { flex: 0 0 auto; min-width: 150px; margin: 0 4px 0 0; }
-      .aside-add { margin: 6px; padding: 6px 12px; white-space: nowrap; }
-    }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand"><div class="logo">🚀</div>多服务器部署控制台</div>
-    <div class="save-status clean" id="save-status" title="配置未发生改变"><span class="save-dot"></span>已保存</div>
-    <div class="spacer"></div>
-    <div class="scenario-box" style="display:flex;align-items:center;gap:6px;background:var(--panel-2);padding:4px 10px;border-radius:7px;border:1px solid var(--border)">
-      <span style="font-size:12px;color:var(--muted);font-weight:600">🎯 场景:</span>
-      <select id="scenario-selector" onchange="onScenarioChange(this.value)" style="background:transparent;border:none;font-size:12px;color:var(--text);font-weight:600;cursor:pointer;outline:none">
-        <option value="">全部服务</option>
+  <!-- 顶部导航栏 (Command Bar) -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">🚀</div>
+      <span>多服务器部署控制台</span>
+    </div>
+    <div class="save-badge clean" id="save-status-badge" title="配置未发生变动">
+      <span class="dot"></span>已保存
+    </div>
+
+    <div class="header-sep"></div>
+
+    <!-- 场景切换 -->
+    <div class="scenario-pill" title="切换业务部署场景白名单">
+      <span style="font-weight:700;color:var(--muted)">🎯 场景:</span>
+      <select id="scenario-select" onchange="onScenarioSelectChange(this.value)">
+        <option value="">全部服务 (All)</option>
       </select>
     </div>
-    <label class="parallel-toggle" title="开启后所有服务器同时并行部署">
-      <input type="checkbox" id="global-parallel" checked><span class="dot"></span>全并发执行
+
+    <!-- 全并发开关 -->
+    <label class="parallel-toggle" title="开启后同波次的所有服务同时并发调度">
+      <input type="checkbox" id="global-parallel-sw" checked onchange="notifyChange()">
+      <span class="sw-dot"></span>全并发执行
     </label>
+
+    <div class="spacer"></div>
+
+    <!-- 实用工具动作 -->
+    <button class="btn sm-btn" title="批量对所有服务的主机发起 SSH 握手并检测延迟" onclick="testAllConnections()">🔌 批量探测连通</button>
     <input type="file" id="import-file-input" accept=".json,.yaml,.yml" style="display:none" onchange="handleImportFile(event)">
-    <button class="btn" title="导入本地配置文件覆盖当前设置" onclick="document.getElementById('import-file-input').click()">⬆ 导入</button>
-    <button class="btn" title="导出当前配置为 JSON 文件" onclick="exportConfig()">⬇ 导出</button>
-    <button class="btn" title="保存当前配置到磁盘 (Ctrl+S)" onclick="saveConfig()">💾 保存</button>
-    <button class="btn primary" title="触发部署流水线" onclick="startDeploy()">⚡ 一键部署</button>
+    <button class="btn sm-btn" title="从本地 JSON/YAML 文件导入配置" onclick="document.getElementById('import-file-input').click()">⬆ 导入</button>
+    <button class="btn sm-btn" title="导出当前配置为 JSON 文件" onclick="exportConfig()">⬇ 导出</button>
+    <button class="btn sm-btn" title="保存当前配置到磁盘 (Ctrl+S)" onclick="saveConfig()">💾 保存</button>
+
+    <!-- 醒目一键部署按钮 (Primary CTA) -->
+    <button class="btn primary" id="btn-start-deploy" title="触发当前选定场景/服务的自动化部署流水线 (Ctrl+Enter)" onclick="startDeploy()">
+      <span>⚡ 立即部署</span>
+      <span id="deploy-target-count" style="background:rgba(255,255,255,0.25);border-radius:10px;padding:0 6px;font-size:11px">0</span>
+    </button>
   </header>
 
-  <main>
-    <aside>
-      <div class="aside-head">服务单元 <span class="count" id="svc-count">0</span></div>
-      <div class="aside-search">
-        <input id="search-svc" placeholder="🔍 快速搜索服务/主机/组名..." oninput="onSearchInput(this.value)">
+  <!-- 工作区主体 -->
+  <div class="workspace">
+    <!-- 侧边导航栏 (Aside) -->
+    <aside class="nav-sidebar">
+      <div class="sidebar-head">
+        <div class="sidebar-title">服务单元 <span class="sidebar-count" id="svc-count-badge">0</span></div>
       </div>
-      <div class="svc-list" id="svc-list"></div>
-      <button class="aside-add" onclick="addService()">＋ 添加服务单元</button>
+      <div class="sidebar-search-box">
+        <input id="sidebar-search" placeholder="🔍 搜索服务/主机/组名/标签..." oninput="onSearchChange(this.value)">
+      </div>
+      <div class="sidebar-list" id="sidebar-list"></div>
+      <button class="sidebar-add-btn" onclick="addService()">＋ 添加服务单元</button>
     </aside>
 
-    <section class="editor" id="editor">
-      <div class="empty" id="empty-state">
-        <div>
-          <div class="icon">🛰️</div>
-          <p>左侧还没有服务单元<br>从「＋ 添加服务单元」开始，或从上方「⬆ 导入」现有配置</p>
-          <button class="btn primary" onclick="addService()">＋ 立即添加</button>
-        </div>
+    <!-- 中央编辑主区 (Editor) -->
+    <section class="editor-pane" id="editor-pane">
+      <div class="empty-placeholder" id="empty-state" style="display:none">
+        <div class="icon">🛰️</div>
+        <p style="font-size:14px;font-weight:600;margin-bottom:6px">当前未选择任何服务单元</p>
+        <p style="font-size:12px;color:var(--faint);margin-bottom:16px">从左侧选择一个服务进行配置，或点击下方按钮新建</p>
+        <button class="btn primary" onclick="addService()">＋ 立即添加服务</button>
       </div>
-      <div class="editor-inner" id="editor-inner" style="display:none"></div>
+
+      <div class="editor-container" id="editor-container"></div>
     </section>
-  </main>
-
-  <!-- 部署实时终端 -->
-  <div class="modal-backdrop" id="deploy-modal">
-    <div class="terminal-modal">
-      <div class="modal-head">
-        <div class="t"><span class="live-dot" id="live-dot"></span>部署实时终端</div>
-        <span class="badge" id="deploy-badge">就绪</span>
-        <div class="spacer"></div>
-        <input class="term-filter" id="term-filter" placeholder="🔍 过滤日志..." oninput="filterLogs(this.value)">
-        <button class="btn danger-ghost sm-btn" id="cancel-deploy-btn" style="color:#f87171" onclick="cancelDeploy()">中止部署</button>
-        <button class="btn sm-btn" title="复制纯文本日志到剪贴板" onclick="copyTerminalText()">📋 复制</button>
-        <button class="btn sm-btn" title="导出日志为本地 .log 文件" onclick="exportTerminalLog()">💾 导出</button>
-        <button class="btn sm-btn" onclick="clearTerminal()">清屏</button>
-        <button class="btn sm-btn" onclick="closeTerminal()">关闭</button>
-      </div>
-      <div class="terminal" id="terminal-output"></div>
-      <div class="scroll-bottom-btn" id="scroll-bottom-btn" onclick="scrollToBottom()">⬇ 滚回底部 (吸底已暂停)</div>
-      <div class="modal-foot">
-        <span class="a-dim" style="font-size:11px">SSE 实时流 · 支持彩色前缀 · 支持快捷键 Esc 关闭</span>
-        <span class="a-dim" id="term-stats" style="font-size:11px">就绪</span>
-      </div>
-    </div>
   </div>
 
-  <!-- 交互式选择器弹窗 (Picker Modal) -->
+  <!-- 底部可伸缩控制台抽屉 (Bottom Terminal Drawer) -->
+  <div class="terminal-drawer collapsed" id="terminal-drawer">
+    <div class="drawer-bar" onclick="toggleDrawerState()">
+      <div class="drawer-title">
+        <span class="live-pulse" id="drawer-live-pulse" style="display:none"></span>
+        <span>💻 部署实时终端</span>
+      </div>
+      <span class="drawer-badge" id="drawer-status-badge">就绪</span>
+
+      <!-- 单节点日志过滤标签页 -->
+      <div class="filter-pills" id="drawer-filter-pills" onclick="event.stopPropagation()"></div>
+
+      <input class="drawer-search" id="drawer-search-input" placeholder="🔍 过滤日志..."
+             onclick="event.stopPropagation()" oninput="filterLogs(this.value)">
+
+      <div class="drawer-actions" onclick="event.stopPropagation()">
+        <button class="drawer-btn" id="btn-cancel-deploy" style="display:none;color:#f87171" onclick="cancelDeploy()">🛑 中止</button>
+        <button class="drawer-btn" title="复制终端日志纯文本" onclick="copyTerminalText()">📋 复制</button>
+        <button class="drawer-btn" title="导出日志到本地 .log" onclick="exportTerminalLog()">💾 导出</button>
+        <button class="drawer-btn" title="清空终端屏幕" onclick="clearTerminal()">清屏</button>
+        <button class="drawer-btn" id="btn-drawer-toggle" title="展开/收起终端 (Ctrl+`)" onclick="cycleDrawerHeight()">⤢ 展开</button>
+        <button class="drawer-btn" title="收起到底部" onclick="setDrawerState('collapsed')">✕ 收起</button>
+      </div>
+    </div>
+
+    <div class="terminal-body" id="terminal-body"></div>
+    <div class="term-scroll-down-btn" id="term-scroll-btn" onclick="scrollToBottom()">⬇ 滚回底部 (吸底已暂停)</div>
+  </div>
+
+  <!-- 模态命令预设选择框 (Picker Modal) -->
   <div class="modal-backdrop" id="picker-modal" onclick="onPickerBackdropClick(event)">
-    <div class="picker-dialog" id="picker-dialog">
-      <div class="pd-head">
-        <div class="pd-title" id="pd-title"><span>📂</span> 交互式选择</div>
-        <button class="pd-close" onclick="closePicker()">✕</button>
+    <div class="picker-card" id="picker-card">
+      <div class="pc-head">
+        <div class="pc-title" id="pc-title"><span>⚡</span> 选取常用预备命令</div>
+        <button class="pc-close" onclick="closePicker()">✕</button>
       </div>
-      <div class="pd-toolbar">
-        <input class="pd-search" id="pd-search" placeholder="🔍 输入关键词实时过滤..." oninput="onPickerSearch(this.value)">
-        <div class="pd-cats" id="pd-cats"></div>
+      <div class="pc-filter-bar">
+        <input class="pc-search-input" id="pc-search" placeholder="🔍 输入关键词实时过滤..." oninput="onPickerSearchInput(this.value)">
+        <div class="pc-category-tabs" id="pc-category-tabs"></div>
       </div>
-      <div class="pd-body">
-        <div class="pd-list" id="pd-list"></div>
+      <div class="pc-body">
+        <div class="pc-list" id="pc-list"></div>
       </div>
-      <div class="pd-foot">
-        <div class="pd-foot-left" id="pd-foot-tip">点击列表项可快速选定，亦支持在原位直接手输</div>
-        <div class="pd-foot-btns">
+      <div class="pc-foot">
+        <div style="font-size:11.5px;color:var(--muted)">勾选命令可一键追加至当前输入框，原有手输内容完全保留</div>
+        <div style="display:flex;gap:8px">
           <button class="btn sm-btn" onclick="closePicker()">取消</button>
-          <button class="btn sm-btn primary" id="pd-btn-confirm" onclick="confirmPicker()">确认选定</button>
+          <button class="btn sm-btn primary" onclick="confirmPickerSelection()">追加选定命令</button>
         </div>
       </div>
     </div>
   </div>
 
-  <datalist id="existing-groups"></datalist>
-  <div class="toast" id="toast"></div>
+  <datalist id="existing-groups-dl"></datalist>
+  <div class="toast-msg" id="toast-msg"></div>
 
 <script>
+  /* ===== 核心状态管理 ===== */
   let deployConfig = { parallel: true, hooks: {}, groups: [], scenarios: [], services: [] };
   let currentIndex = -1;
   let isGlobalView = false;
   let currentGroupView = null;
-  let activeTab = 'server';
-  let eventSource = null;
   let selectedScenario = '';
   let searchQuery = '';
   let lastSavedSnapshot = '';
   let userScrolledUp = false;
+  let eventSource = null;
+  let activeLogFilter = ''; // 单节点日志筛选器
+  let healthMap = {}; // 保存各主机的连通性结果: { [svcName]: { ok: boolean, latencyMs: number, error: string } }
 
-  // 危险路径黑名单
+  // 抽屉高度三态: 'collapsed' (收起 36px) | 'split' (半屏 380px) | 'maximized' (全屏)
+  let drawerState = 'collapsed';
+
+  // 危险系统路径黑名单
   const DANGEROUS_PATHS = ['/', '/*', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib64', '/opt', '/proc', '/root', '/sbin', '/sys', '/usr', '/var'];
 
   /* ===== 预备的常用生命周期命令库 ===== */
@@ -631,36 +1285,46 @@
 
   /* ===== 弹窗状态管理 ===== */
   let pickerState = {
-    type: '', // 'path' or 'cmd'
-    targetField: '', // 如 'localPath', 'remotePath', 'preUploadLocal', 等
-    targetContext: null, // 如 groupName
+    targetField: '',
+    targetContext: null,
     activeCategory: '全部',
     searchKeyword: '',
-    selectedValues: [] // 选中的值数组
+    selectedValues: []
   };
 
+  /* ===== 初始化与键盘快捷键 ===== */
   window.addEventListener('DOMContentLoaded', () => {
     loadConfig();
     setupKeyBindings();
     setupTerminalScroll();
   });
 
-  // 全局键盘快捷键
   function setupKeyBindings() {
     window.addEventListener('keydown', e => {
+      // Ctrl+S / Cmd+S 保存
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         saveConfig();
       }
+      // Ctrl+Enter / Cmd+Enter 一键部署
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        startDeploy();
+      }
+      // Ctrl+` 切换底部终端
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        cycleDrawerHeight();
+      }
+      // Esc 关闭弹窗或收起全屏终端
       if (e.key === 'Escape') {
         const pickerModal = document.getElementById('picker-modal');
         if (pickerModal && pickerModal.classList.contains('show')) {
           closePicker();
           return;
         }
-        const modal = document.getElementById('deploy-modal');
-        if (modal && modal.classList.contains('show')) {
-          closeTerminal();
+        if (drawerState === 'maximized') {
+          setDrawerState('split');
         }
       }
     });
@@ -674,11 +1338,11 @@
   }
 
   function setupTerminalScroll() {
-    const term = document.getElementById('terminal-output');
+    const term = document.getElementById('terminal-body');
     term.addEventListener('scroll', () => {
       const distFromBottom = term.scrollHeight - term.scrollTop - term.clientHeight;
       userScrolledUp = distFromBottom > 35;
-      const btn = document.getElementById('scroll-bottom-btn');
+      const btn = document.getElementById('term-scroll-btn');
       if (btn) {
         if (userScrolledUp) btn.classList.add('show');
         else btn.classList.remove('show');
@@ -687,14 +1351,14 @@
   }
 
   function scrollToBottom() {
-    const term = document.getElementById('terminal-output');
+    const term = document.getElementById('terminal-body');
     term.scrollTop = term.scrollHeight;
     userScrolledUp = false;
-    const btn = document.getElementById('scroll-bottom-btn');
+    const btn = document.getElementById('term-scroll-btn');
     if (btn) btn.classList.remove('show');
   }
 
-  /* ===== 脏数据状态检测 ===== */
+  /* ===== 脏数据检测与提示 ===== */
   function markClean() {
     lastSavedSnapshot = snapshot();
     updateSaveIndicator(false);
@@ -705,23 +1369,25 @@
   }
 
   function updateSaveIndicator(dirty) {
-    const el = document.getElementById('save-status');
+    const el = document.getElementById('save-status-badge');
     if (!el) return;
     if (dirty) {
-      el.className = 'save-status dirty';
-      el.innerHTML = '<span class="save-dot"></span>未保存 (Ctrl+S)';
-      el.title = '有未保存的更改，请及时保存';
+      el.className = 'save-badge dirty';
+      el.innerHTML = '<span class="dot"></span>未保存 (Ctrl+S)';
+      el.title = '有尚未持久化的修改，请记得保存';
     } else {
-      el.className = 'save-status clean';
-      el.innerHTML = '<span class="save-dot"></span>已保存';
-      el.title = '配置与磁盘完全同步';
+      el.className = 'save-badge clean';
+      el.innerHTML = '<span class="dot"></span>已保存';
+      el.title = '配置与磁盘文件一致';
     }
   }
 
   function notifyChange() {
     updateSaveIndicator(isDirty());
+    updateDeployCount();
   }
 
+  /* ===== 加载与更新配置 ===== */
   async function loadConfig() {
     try {
       const resp = await fetch('/api/config');
@@ -731,7 +1397,8 @@
       if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
       if (!Array.isArray(deployConfig.scenarios)) deployConfig.scenarios = [];
       if (!deployConfig.hooks) deployConfig.hooks = {};
-      document.getElementById('global-parallel').checked = deployConfig.parallel !== false;
+      
+      document.getElementById('global-parallel-sw').checked = deployConfig.parallel !== false;
       currentIndex = deployConfig.services.length ? 0 : -1;
       isGlobalView = deployConfig.services.length === 0;
       currentGroupView = null;
@@ -746,11 +1413,11 @@
   }
 
   function updateScenarioDropdown() {
-    const sel = document.getElementById('scenario-selector');
+    const sel = document.getElementById('scenario-select');
     if (!sel) return;
     const oldVal = sel.value;
     sel.innerHTML = '<option value="">全部服务 (All)</option>';
-    deployConfig.scenarios.forEach(sc => {
+    (deployConfig.scenarios || []).forEach(sc => {
       const opt = document.createElement('option');
       opt.value = sc.name;
       opt.textContent = `${sc.name} ${sc.description ? '(' + sc.description + ')' : ''}`;
@@ -760,7 +1427,7 @@
   }
 
   function updateGroupDataList() {
-    const dl = document.getElementById('existing-groups');
+    const dl = document.getElementById('existing-groups-dl');
     if (!dl) return;
     const groups = new Set();
     (deployConfig.groups || []).forEach(g => g.name && groups.add(g.name));
@@ -774,44 +1441,27 @@
     });
   }
 
-  function onScenarioChange(val) {
+  function onScenarioSelectChange(val) {
     selectedScenario = val;
     renderSidebar();
+    updateDeployCount();
   }
 
-  function onSearchInput(val) {
+  function onSearchChange(val) {
     searchQuery = (val || '').trim().toLowerCase();
     renderSidebar();
   }
 
   function renderAll() {
-    document.getElementById('global-parallel').checked = deployConfig.parallel !== false;
+    document.getElementById('global-parallel-sw').checked = deployConfig.parallel !== false;
     updateGroupDataList();
     renderSidebar();
     renderEditor();
+    updateDeployCount();
     notifyChange();
   }
 
-  /* ===== 侧边栏：按 Group 分组聚合 + 搜索过滤 ===== */
-  function renderSidebar() {
-    const list = document.getElementById('svc-list');
-    document.getElementById('svc-count').textContent = deployConfig.services.length;
-    list.innerHTML = '';
-
-    // 1. 顶部全局批次设置入口
-    const globalItem = document.createElement('div');
-    globalItem.className = 'svc-item' + (isGlobalView ? ' active' : '');
-    globalItem.style.marginBottom = '6px';
-    globalItem.style.borderLeft = isGlobalView ? '3px solid var(--accent)' : '3px solid #94a3b8';
-    globalItem.style.background = isGlobalView ? 'var(--accent-soft)' : 'var(--panel-2)';
-    globalItem.onclick = () => { isGlobalView = true; currentGroupView = null; currentIndex = -1; renderAll(); };
-    globalItem.innerHTML = `
-      <div class="name"><span>⚙️</span><span><b>全局顶层批次设置</b></span></div>
-      <div class="meta"><span class="host-tag">preDeploy · postDeploy</span></div>
-    `;
-    list.appendChild(globalItem);
-
-    // 计算当前场景下的白名单
+  function getEligibleDeployServices() {
     let sc = null;
     if (selectedScenario) {
       sc = (deployConfig.scenarios || []).find(s => (s.name || '').toLowerCase() === selectedScenario.toLowerCase());
@@ -820,7 +1470,62 @@
     const scServices = new Set((sc?.services || []).map(x => x.toLowerCase()));
     const scTypes = new Set((sc?.types || []).map(x => x.toLowerCase()));
 
-    // 2. 按 group 聚类服务，并应用搜索过滤
+    return deployConfig.services.filter(svc => {
+      if (svc.enabled === false) return false;
+      const sName = (svc.name || '').toLowerCase();
+      const sGroup = (svc.group || 'default').toLowerCase();
+      const sType = (svc.type || 'standard').toLowerCase();
+      if (sc) {
+        if (scServices.size > 0 && !scServices.has(sName)) return false;
+        if (scGroups.size > 0 && !scGroups.has(sGroup)) return false;
+        if (scTypes.size > 0 && !scTypes.has(sType)) return false;
+      }
+      return true;
+    });
+  }
+
+  function updateDeployCount() {
+    const countEl = document.getElementById('deploy-target-count');
+    if (!countEl) return;
+    const eligible = getEligibleDeployServices();
+    countEl.textContent = eligible.length;
+    countEl.title = `本次部署将调度 ${eligible.length} 个启用中的服务节点`;
+  }
+
+  /* ===== 侧边栏列表渲染 ===== */
+  function renderSidebar() {
+    const list = document.getElementById('sidebar-list');
+    document.getElementById('svc-count-badge').textContent = deployConfig.services.length;
+    list.innerHTML = '';
+
+    // 1. 全局批次生命周期设置项
+    const globalItem = document.createElement('div');
+    globalItem.className = 'svc-item' + (isGlobalView ? ' active' : '');
+    globalItem.style.marginBottom = '6px';
+    globalItem.style.borderLeft = isGlobalView ? '3px solid var(--accent)' : '3px solid #94a3b8';
+    globalItem.style.background = isGlobalView ? 'var(--accent-soft)' : 'var(--panel-2)';
+    globalItem.onclick = () => { isGlobalView = true; currentGroupView = null; currentIndex = -1; renderAll(); };
+    globalItem.innerHTML = `
+      <div class="name-row">
+        <span>⚙️</span>
+        <span class="svc-title"><b>全局批次编排设置</b></span>
+      </div>
+      <div class="meta-row">
+        <span class="host-tag">preDeploy · postDeploy</span>
+      </div>
+    `;
+    list.appendChild(globalItem);
+
+    // 2. 场景白名单过滤
+    let sc = null;
+    if (selectedScenario) {
+      sc = (deployConfig.scenarios || []).find(s => (s.name || '').toLowerCase() === selectedScenario.toLowerCase());
+    }
+    const scGroups = new Set((sc?.groups || []).map(x => x.toLowerCase()));
+    const scServices = new Set((sc?.services || []).map(x => x.toLowerCase()));
+    const scTypes = new Set((sc?.types || []).map(x => x.toLowerCase()));
+
+    // 3. 聚类分组
     const groupsMap = new Map();
     deployConfig.services.forEach((svc, i) => {
       const sName = (svc.name || '').toLowerCase();
@@ -829,33 +1534,29 @@
       const sHost = (svc.server?.host || '').toLowerCase();
       const sTags = (svc.tags || []).join(' ').toLowerCase();
 
-      // 场景白名单过滤
       if (sc) {
         if (scServices.size > 0 && !scServices.has(sName)) return;
         if (scGroups.size > 0 && !scGroups.has(sGroup)) return;
         if (scTypes.size > 0 && !scTypes.has(sType)) return;
       }
-
-      // 搜索关键词过滤
       if (searchQuery) {
         const match = sName.includes(searchQuery) || sGroup.includes(searchQuery) || sHost.includes(searchQuery) || sTags.includes(searchQuery);
         if (!match) return;
       }
 
       const grp = svc.group || 'default';
-      if (!groupsMap.has(grp)) {
-        groupsMap.set(grp, []);
-      }
+      if (!groupsMap.has(grp)) groupsMap.set(grp, []);
       groupsMap.get(grp).push({ svc, index: i });
     });
 
     if (groupsMap.size === 0) {
-      const emptyTip = document.createElement('div');
-      emptyTip.style.padding = '14px 10px';
-      emptyTip.style.fontSize = '12px';
-      emptyTip.style.color = 'var(--faint)';
-      emptyTip.textContent = searchQuery ? '未找到匹配的服务单元' : '当前场景下无匹配服务';
-      list.appendChild(emptyTip);
+      const tip = document.createElement('div');
+      tip.style.padding = '18px 10px';
+      tip.style.fontSize = '12px';
+      tip.style.color = 'var(--faint)';
+      tip.style.textAlign = 'center';
+      tip.textContent = searchQuery ? '未找到符合条件的服务' : '当前场景下无匹配服务';
+      list.appendChild(tip);
       return;
     }
 
@@ -866,12 +1567,12 @@
       if (isGrpActive) gh.style.color = 'var(--accent)';
 
       gh.innerHTML = `
-        <div class="gh-title" style="cursor:pointer" onclick="openGroupHooks('${escapeHtml(groupName)}')">
-          📁 <span>${escapeHtml(groupName)}</span> <span style="font-size:10px;color:var(--faint)">(${items.length})</span>
+        <div class="gh-title" onclick="openGroupHooks('${escapeHtml(groupName)}')">
+          📁 <span>${escapeHtml(groupName)}</span> <span style="font-size:10.5px;color:var(--faint)">(${items.length})</span>
         </div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <button class="gh-deploy-btn" style="color:${isGrpActive ? 'var(--accent)' : 'var(--muted)'}" title="配置该组专属批次前后置钩子" onclick="event.stopPropagation();openGroupHooks('${escapeHtml(groupName)}')">⚙️ 组钩子</button>
-          <button class="gh-deploy-btn" title="仅部署此分组" onclick="event.stopPropagation();startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 部署此组</button>
+        <div class="gh-btns">
+          <button class="gh-btn" title="配置该组生命周期钩子" onclick="event.stopPropagation();openGroupHooks('${escapeHtml(groupName)}')">⚙️ 组钩子</button>
+          <button class="gh-btn" title="仅部署此分组" onclick="event.stopPropagation();startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 部署此组</button>
         </div>
       `;
       list.appendChild(gh);
@@ -886,21 +1587,34 @@
         const typeLabel = svc.type === 'exec_only' ? 'Exec' : (svc.type === 'sync_only' ? 'Sync' : 'Standard');
         const stageLabel = `S${svc.stage || 1}`;
 
+        // 健康状态
+        const hInfo = healthMap[svc.name];
+        let dotClass = enabled ? 'ok' : 'off';
+        let dotTitle = enabled ? '就绪' : '已禁用';
+        if (hInfo) {
+          if (hInfo.ok) {
+            dotClass = 'ok';
+            dotTitle = `SSH 握手成功 (${hInfo.latencyMs}ms)`;
+          } else {
+            dotClass = 'err';
+            dotTitle = `SSH 异常: ${hInfo.error}`;
+          }
+        }
+
         item.innerHTML = `
-          <div class="name">
-            <span class="status-dot ${enabled ? 'on' : 'off'}"></span>
-            <span>${escapeHtml(svc.name || 'service-' + (i + 1))}</span>
-            <span style="margin-left:auto;display:flex;gap:3px;align-items:center">
+          <div class="name-row">
+            <span class="status-dot ${dotClass}" title="${escapeHtml(dotTitle)}"></span>
+            <span class="svc-title" title="${escapeHtml(svc.name)}">${escapeHtml(svc.name || 'service-' + (i + 1))}</span>
+            <span style="display:flex;gap:3px;align-items:center">
               <span class="type-pill ${typeClass}">${typeLabel}</span>
-              <span class="stage-pill">${stageLabel}</span>
+              <span class="stage-pill" title="波次阶段">${stageLabel}</span>
             </span>
           </div>
-          <div class="meta">
-            <span class="host-tag">${escapeHtml(svc.server?.host || '未配置主机')}</span>
+          <div class="meta-row">
+            <span class="host-tag" title="主机地址">${escapeHtml(svc.server?.host || '未配主机')}</span>
             <span>:${svc.server?.port || 22}</span>
-            ${enabled ? '' : '<span style="color:#dc2626">已禁用</span>'}
+            ${enabled ? '' : '<span style="color:#ef4444;font-size:10px">已禁用</span>'}
           </div>
-          <button class="del" title="删除" onclick="event.stopPropagation();deleteService(${i})">✕</button>
         `;
         list.appendChild(item);
       });
@@ -914,72 +1628,420 @@
     renderAll();
   }
 
-  /* ===== 编辑区 ===== */
+  /* ===== 主编辑区渲染 (Editor) ===== */
   function renderEditor() {
+    const emptyEl = document.getElementById('empty-state');
+    const containerEl = document.getElementById('editor-container');
+
     if (isGlobalView) {
-      document.getElementById('empty-state').style.display = 'none';
-      document.getElementById('editor-inner').style.display = 'block';
-      renderGlobalEditorInner();
+      emptyEl.style.display = 'none';
+      containerEl.style.display = 'block';
+      renderGlobalEditorInner(containerEl);
       return;
     }
     if (currentGroupView) {
-      document.getElementById('empty-state').style.display = 'none';
-      document.getElementById('editor-inner').style.display = 'block';
-      renderGroupEditorInner(currentGroupView);
+      emptyEl.style.display = 'none';
+      containerEl.style.display = 'block';
+      renderGroupEditorInner(currentGroupView, containerEl);
       return;
     }
+
     const has = currentIndex >= 0 && currentIndex < deployConfig.services.length;
-    document.getElementById('empty-state').style.display = has ? 'none' : 'grid';
-    document.getElementById('editor-inner').style.display = has ? 'block' : 'none';
+    emptyEl.style.display = has ? 'none' : 'flex';
+    containerEl.style.display = has ? 'block' : 'none';
     if (!has) return;
-    renderEditorInner();
+
+    renderServicePipelineEditor(containerEl);
   }
 
-  function renderGroupEditorInner(groupName) {
+  /* ===== 渲染：单个服务五阶段线性流水线 (Visual Pipeline Flow) ===== */
+  function renderServicePipelineEditor(container) {
+    const i = currentIndex;
+    const svc = deployConfig.services[i];
+    const enabled = svc.enabled !== false;
+    const s = svc.server || {}, u = svc.upload || {}, h = svc.hooks || {};
+    const arr = a => (a || []).join('\n');
+    const exclude = (u.exclude || []).join(', ');
+    const tagsStr = (svc.tags || []).join(', ');
+
+    // 获取当前服务所属的分组生命周期配置
+    const grpName = svc.group || 'default';
+    if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
+    let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === grpName.toLowerCase());
+    if (!grp) {
+      grp = { name: grpName, hooks: {} };
+      deployConfig.groups.push(grp);
+    }
+    if (!grp.hooks) grp.hooks = {};
+    const grpHooks = grp.hooks;
+
+    // 检查是否有该服务的健康检测记录
+    const hInfo = healthMap[svc.name];
+    let connStatusHtml = '';
+    if (hInfo) {
+      if (hInfo.ok) {
+        connStatusHtml = `<span style="color:var(--green);font-weight:600;font-size:12px">🟢 SSH 连通正常 (${hInfo.latencyMs}ms)</span>`;
+      } else {
+        connStatusHtml = `<span style="color:var(--red);font-weight:600;font-size:12px">🔴 SSH 失败: ${escapeHtml(hInfo.error)}</span>`;
+      }
+    }
+
+    container.innerHTML = `
+      <!-- 1. 服务概览卡片 (Overview Banner) -->
+      <div class="overview-banner">
+        <div class="ob-head">
+          <input class="svc-title-input" value="${escapeHtml(svc.name || '')}" placeholder="输入服务名称"
+                 oninput="upd('name', this.value)" onchange="onServiceNameChange()">
+          
+          <span class="host-tag" style="font-size:12px;padding:3px 8px">${escapeHtml(s.host || '127.0.0.1')}:${s.port || 22}</span>
+
+          <label class="enable-toggle" title="禁用后执行一键部署时将自动跳过此单元">
+            <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleEnabled(this.checked)">
+            <span class="checkbox-box"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span>启用此服务</span>
+          </label>
+
+          <button class="btn sm-btn" onclick="startDeploy({ targetServices: ['${escapeHtml(svc.name)}'] })">⚡ 仅部署此项</button>
+          <button class="btn sm-btn" onclick="duplicateService(${i})">⧉ 复制</button>
+          <button class="btn danger-ghost sm-btn" onclick="deleteService(${i})">🗑 删除</button>
+        </div>
+
+        <!-- 分组与调度元数据 -->
+        <div class="ob-meta-bar">
+          <div class="meta-field">
+            <label>📁 所属分组 (Group):</label>
+            <input list="existing-groups-dl" value="${escapeHtml(grpName)}" placeholder="选择或新建组"
+                   oninput="updGroupField(this.value)" style="width:120px">
+          </div>
+
+          <div class="meta-field">
+            <label>🛠 任务类型:</label>
+            <select onchange="upd('type', this.value)">
+              <option value="standard" ${(!svc.type || svc.type === 'standard') ? 'selected' : ''}>standard (全流水线)</option>
+              <option value="exec_only" ${svc.type === 'exec_only' ? 'selected' : ''}>exec_only (纯命令无文件)</option>
+              <option value="sync_only" ${svc.type === 'sync_only' ? 'selected' : ''}>sync_only (纯文件传输)</option>
+            </select>
+          </div>
+
+          <div class="meta-field">
+            <label>🌊 波次阶段 (Stage):</label>
+            <input type="number" min="1" value="${svc.stage || 1}" oninput="upd('stage', parseInt(this.value)||1)"
+                   style="width:55px" title="阶段严格按升序串行触发，同一阶段内支持并发">
+          </div>
+
+          <div class="meta-field">
+            <label>🏷️ 标签 (Tags):</label>
+            <input value="${escapeHtml(tagsStr)}" placeholder="api, core (逗号隔开)" oninput="updTags(this.value)" style="width:130px">
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 全流程时序步进导航 (包含所属组生命周期 + 节点流水线) -->
+      <div class="pipeline-stepper">
+        <div class="step-pill group-pill" onclick="scrollToStep('step-group-pre')" title="所属【${escapeHtml(grpName)}】组并发启动前本地命令，多服务器仅执行一次">
+          <div class="num">📁</div>
+          <div class="info"><span class="title">组前置构建</span><span class="desc">${escapeHtml(grpName)}·仅1次</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill" onclick="scrollToStep('step-pre-local')">
+          <div class="num">1</div>
+          <div class="info"><span class="title">节点本地</span><span class="desc">preUploadLocal</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill" onclick="scrollToStep('step-ssh-conn')">
+          <div class="num">2</div>
+          <div class="info"><span class="title">SSH 连接</span><span class="desc">Host & Auth</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill" onclick="scrollToStep('step-sftp-sync')">
+          <div class="num">3</div>
+          <div class="info"><span class="title">传输与准备</span><span class="desc">SFTP & PreRemote</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill" onclick="scrollToStep('step-post-remote')">
+          <div class="num">4</div>
+          <div class="info"><span class="title">远端重启</span><span class="desc">postUploadRemote</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill" onclick="scrollToStep('step-post-local')">
+          <div class="num">5</div>
+          <div class="info"><span class="title">节点善后</span><span class="desc">postUploadLocal</span></div>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-pill group-pill" onclick="scrollToStep('step-group-post')" title="所属【${escapeHtml(grpName)}】组所有节点全部成功后本地命令，仅执行一次">
+          <div class="num">📁</div>
+          <div class="info"><span class="title">组完成善后</span><span class="desc">${escapeHtml(grpName)}·仅1次</span></div>
+        </div>
+      </div>
+
+      <!-- 阶段 0: 组生命周期前置 (Group Pre-Deploy) -->
+      <div class="step-card group-card" id="step-group-pre">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#7c3aed">📁</div>
+            <div class="sc-title">组生命周期：【${escapeHtml(grpName)} 组】全局调度前 · 本地命令 (preDeploy)</div>
+            <span class="sc-env-tag local">所属组共享 · 本地仅执行 1 次</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPre', '${escapeHtml(grpName)}')">⚡ 弹窗选组构建模版</button>
+        </div>
+        <div class="form-group">
+          <label><span>此命令在该组所有节点（多机批量并发）调度前<b>在本地仅执行一次</b>（如统一 Maven 打包或 npm 构建）</span></label>
+          <textarea id="gh-preDeploy-in-svc" oninput="updGroupHook('${escapeHtml(grpName)}', 'preDeploy', this.value)"
+                    placeholder="可在此直接手写组构建命令，例如:&#10;cd D:/projects/my-backend && mvn clean package -DskipTests&#10;cd D:/projects/my-frontend && npm run build && tar -czf dist.tar.gz -C dist .">${escapeHtml(arr(grpHooks.preDeploy))}</textarea>
+          <div class="hint">💡 <b>多机批量心智</b>：属于【${escapeHtml(grpName)}】组的全部服务器共享此命令。执行失败将安全阻断整组后续服务器部署。在此修改实时对本组所有节点生效。</div>
+        </div>
+      </div>
+
+      <!-- 阶段 1: 本地构建前置 (Step 1: Pre-Local) -->
+      <div class="step-card" id="step-pre-local">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#2563eb">1</div>
+            <div class="sc-title">阶段一：本地前置构建 (preUploadLocal)</div>
+            <span class="sc-env-tag local">本地环境 · 命令</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadLocal')">⚡ 弹窗选常用模版</button>
+        </div>
+        <div class="form-group">
+          <label><span>本地命令（每行一条，支持环境变量与 <code>npm run build</code> 等编译命令）</span></label>
+          <textarea id="hook-preUploadLocal" oninput="updHook('preUploadLocal', this.value)"
+                    placeholder="可在此直接手输命令，例如:&#10;npm run build&#10;go build -ldflags='-s -w' -o bin/app .">${escapeHtml(arr(h.preUploadLocal))}</textarea>
+          <div class="hint">执行时机：在发起 SSH 连接与上传前在本地运行，若返回非 0 状态码将直接安全中止后续步骤。</div>
+        </div>
+      </div>
+
+      <!-- 阶段 2: 主机与 SSH 鉴权 (Step 2: SSH Connection) -->
+      <div class="step-card" id="step-ssh-conn">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#0284c7">2</div>
+            <div class="sc-title">阶段二：服务器连接与 SSH 认证 (Server Connection)</div>
+            <span class="sc-env-tag remote">SSH 安全握手</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${connStatusHtml}
+            <button class="btn sm-btn" id="btn-test-conn" onclick="testConnection()">🔌 测试 SSH 连接</button>
+          </div>
+        </div>
+        <div class="field-grid g4">
+          <div class="form-group">
+            <label>主机 IP / 域名 <b>*</b></label>
+            <input value="${escapeHtml(s.host || '')}" placeholder="192.168.1.100" oninput="updServer('host', this.value)">
+          </div>
+          <div class="form-group">
+            <label>SSH 端口</label>
+            <input type="number" value="${s.port || 22}" oninput="updServer('port', parseInt(this.value)||22)">
+          </div>
+          <div class="form-group">
+            <label>用户名 <b>*</b></label>
+            <input value="${escapeHtml(s.username || '')}" placeholder="root" oninput="updServer('username', this.value)">
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input type="password" value="${escapeHtml(s.password || '')}" placeholder="密码 / 私钥二选一" oninput="updServer('password', this.value)">
+          </div>
+          <div class="form-group">
+            <label>私钥路径 (Private Key)</label>
+            <input value="${escapeHtml(s.privateKeyPath || '')}" placeholder="~/.ssh/id_rsa" oninput="updServer('privateKeyPath', this.value)">
+          </div>
+          <div class="form-group">
+            <label>私钥口令 (Passphrase)</label>
+            <input type="password" value="${escapeHtml(s.passphrase || '')}" placeholder="无口令可留空" oninput="updServer('passphrase', this.value)">
+          </div>
+          <div class="form-group">
+            <label>主机指纹 (Fingerprint)</label>
+            <input value="${escapeHtml(s.hostKeyFingerprint || '')}" placeholder="SHA256:... (选填)" oninput="updServer('hostKeyFingerprint', this.value)">
+          </div>
+          <div class="form-group">
+            <label>超时时间 (秒)</label>
+            <input type="number" value="${s.connectTimeout || 15}" oninput="updServer('connectTimeout', parseInt(this.value)||15)">
+          </div>
+        </div>
+        <div id="conn-result-inline" style="margin-top:6px;font-size:12px"></div>
+      </div>
+
+      <!-- 阶段 3: 远端准备与 SFTP 文件传输 (Step 3: SFTP Sync & Pre-Remote) -->
+      <div class="step-card" id="step-sftp-sync">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#10b981">3</div>
+            <div class="sc-title">阶段三：远端环境准备与 SFTP 文件传输 (SFTP Sync)</div>
+            <span class="sc-env-tag remote">文件传输</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadRemote')">⚡ 选停服/准备命令</button>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px">
+          <label>远端准备命令 (preUploadRemote，例如: 停服 / 创建目录 / 备份旧程序)</label>
+          <textarea id="hook-preUploadRemote" oninput="updHook('preUploadRemote', this.value)"
+                    placeholder="可在此手输命令，例如:&#10;systemctl stop my-app || true&#10;mkdir -p /opt/app/backup">${escapeHtml(arr(h.preUploadRemote))}</textarea>
+        </div>
+
+        <div class="field-grid g2">
+          <div class="form-group">
+            <label>
+              <span>本地源路径 (localPath) <b>*</b></span>
+              <div style="display:flex;gap:6px">
+                <button class="btn sm-btn picker-btn" onclick="pickNativePath('folder')">📁 选系统目录</button>
+                <button class="btn sm-btn picker-btn" onclick="pickNativePath('file')">📄 选系统文件</button>
+              </div>
+            </label>
+            <input id="input-localPath" value="${escapeHtml(u.localPath || '')}"
+                   placeholder="可直接手输/粘贴路径，或点击右侧选系统目录/文件"
+                   oninput="updUpload('localPath', this.value)">
+            <div class="hint">支持绝对路径或当前相对路径（如 <code>./dist</code>、<code>D:\\app\\build</code>）。</div>
+          </div>
+
+          <div class="form-group">
+            <label>远端目标路径 (remotePath) <b>*</b></label>
+            <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}"
+                   placeholder="直接输入 Linux 绝对路径，例: /opt/app/my-app"
+                   oninput="updUpload('remotePath', this.value);checkDangerousPath(this.value)">
+            <div class="danger-banner" id="danger-path-banner">
+              ⚠️ 风险提示：检测到该路径为 Linux 系统关键目录，请核实目标路径以防覆盖系统文件！
+            </div>
+            <div class="hint">远端存放路径，父级目录不存在时 SFTP 引擎将自动流式递归创建。</div>
+          </div>
+        </div>
+
+        <div class="field-grid g2" style="margin-top:10px">
+          <div class="form-group">
+            <label>排除文件规则（逗号隔开，支持通配符）</label>
+            <input value="${escapeHtml(exclude)}" placeholder="例: .git, node_modules, *.log" oninput="updExclude(this.value)">
+            <div class="hint" style="margin-top:4px">快速追加: 
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('.git')">+.git</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('node_modules')">+node_modules</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('*.log')">+*.log</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline" onclick="addExcludeRule('.env')">+.env</span>
+            </div>
+          </div>
+
+          <div class="form-group" style="justify-content:center;background:var(--panel-2);padding:10px 14px;border-radius:8px;border:1px solid var(--border)">
+            <div style="font-size:11.5px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:5px">
+              <span>🛡️</span> 增量流式覆盖安全机制
+            </div>
+            <div class="hint" style="color:var(--muted);margin-top:4px;line-height:1.5">
+              文件传输采用增量流式写入。如需先对旧版本备份（如带时间戳归档）或执行特定清理，推荐在上方「远端准备命令」中自由编写执行。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段 4: 远端重启与服务守护 (Step 4: Post-Remote) -->
+      <div class="step-card" id="step-post-remote">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#8b5cf6">4</div>
+            <div class="sc-title">阶段四：远端启动守护与健康检查 (postUploadRemote)</div>
+            <span class="sc-env-tag remote">远端命令</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadRemote')">⚡ 选启动/守护模版</button>
+        </div>
+        <div class="form-group">
+          <label>远端命令（每行一条，支持权限赋予、Systemd 重载重启、Docker Compose 启动、健康探测等）</label>
+          <textarea id="hook-postUploadRemote" oninput="updHook('postUploadRemote', this.value)"
+                    placeholder="可在此手输命令，例如:&#10;systemctl daemon-reload && systemctl restart my-app&#10;sleep 2 && curl -sf http://127.0.0.1:8080/health || exit 1">${escapeHtml(arr(h.postUploadRemote))}</textarea>
+          <div class="hint">执行时机：SFTP 流式上传完全传输落地后在远端主机执行。</div>
+        </div>
+      </div>
+
+      <!-- 阶段 5: 本地善后与通知 (Step 5: Post-Local) -->
+      <div class="step-card" id="step-post-local">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#f59e0b">5</div>
+            <div class="sc-title">阶段五：本地善后与上线通知 (postUploadLocal)</div>
+            <span class="sc-env-tag local">单节点 · 本地善后</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadLocal')">⚡ 选通知模版</button>
+        </div>
+        <div class="form-group">
+          <label>本地通知命令（每行一条，例如发送钉钉/飞书群 Webhook、触发自动化回归测试）</label>
+          <textarea id="hook-postUploadLocal" oninput="updHook('postUploadLocal', this.value)"
+                    placeholder="可在此手输命令，例如:&#10;echo '服务已成功上线'&#10;curl -s -X POST 'https://oapi.dingtalk.com/robot/send?...'">${escapeHtml(arr(h.postUploadLocal))}</textarea>
+          <div class="hint">执行时机：该服务所有前序阶段均返回成功后，在本地终端执行收尾操作。</div>
+        </div>
+      </div>
+
+      <!-- 阶段 6: 组生命周期后置 (Group Post-Deploy) -->
+      <div class="step-card group-card" id="step-group-post">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#7c3aed">📁</div>
+            <div class="sc-title">组生命周期：【${escapeHtml(grpName)} 组】全部成功后 · 本地命令 (postDeploy)</div>
+            <span class="sc-env-tag local">所属组共享 · 本地仅执行 1 次</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPost', '${escapeHtml(grpName)}')">⚡ 弹窗选组善后模版</button>
+        </div>
+        <div class="form-group">
+          <label><span>当且仅当【${escapeHtml(grpName)} 组】全部服务节点均成功部署后，在本地执行一次</span></label>
+          <textarea id="gh-postDeploy-in-svc" oninput="updGroupHook('${escapeHtml(grpName)}', 'postDeploy', this.value)"
+                    placeholder="可在此手写命令，例如:&#10;echo '==> 【${escapeHtml(grpName)} 组】所有节点已全部上线完成！'&#10;curl -sf http://127.0.0.1:8080/smoke-test">${escapeHtml(arr(grpHooks.postDeploy))}</textarea>
+          <div class="hint">💡 <b>组终点善后</b>：适合用于全节点就绪后的冒烟回归测试、群通知或聚合上报。在此修改实时对本组所有节点生效。</div>
+        </div>
+      </div>
+    `;
+
+    checkDangerousPath(u.remotePath || '');
+  }
+
+  function scrollToStep(stepId) {
+    const el = document.getElementById(stepId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.style.borderColor = 'var(--accent)';
+      setTimeout(() => { el.style.borderColor = ''; }, 1200);
+    }
+  }
+
+  /* ===== 渲染：分组生命周期设置 ===== */
+  function renderGroupEditorInner(groupName, container) {
     if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
     let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === groupName.toLowerCase());
     if (!grp) grp = { name: groupName, hooks: {} };
     if (!grp.hooks) grp.hooks = {};
     const arr = a => (a || []).join('\n');
 
-    document.getElementById('editor-inner').innerHTML = `
-      <div class="ed-head">
-        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px">
-          <span>📁</span> 分组批次生命周期设置: <span style="color:var(--accent)">${escapeHtml(groupName)}</span>
+    container.innerHTML = `
+      <div class="overview-banner">
+        <div class="ob-head">
+          <span style="font-size:16px;font-weight:700">📁 分组专属生命周期编排: <span style="color:var(--accent)">${escapeHtml(groupName)}</span></span>
+          <button class="btn primary sm-btn" style="margin-left:auto" onclick="startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 仅部署此组全部服务</button>
         </div>
-        <button class="btn primary" style="padding:5px 12px;margin-left:auto" onclick="startDeploy({ targetGroups: ['${escapeHtml(groupName)}'] })">⚡ 立即部署此分组</button>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6">
+          💡 <b>分组执行说明</b>：此处的钩子仅在本次调度包含 <b>${escapeHtml(groupName)}</b> 组的服务时在本地独立触发一次。<br>
+          • <b>preDeploy</b>：在该组所有服务节点调度前在本地运行（如编译产物），失败则阻断该组；<br>
+          • <b>postDeploy</b>：该组所有服务节点全部返回成功后在本地触发。
+        </div>
       </div>
 
-      <div style="padding:10px 0 24px">
-        <div style="margin-bottom:14px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--muted);font-size:12px;line-height:1.6">
-          💡 <b>分组生命周期说明</b>：此钩子仅当本次部署包含 <b>${escapeHtml(groupName)}</b> 组的服务时在本地独立触发一次。<br>
-          • <b>preDeploy</b>：在该组所有远程服务开始调度前在本地运行（如前端 <code>npm run build</code>、后端 <code>go build</code>），若失败则阻断该组；<br>
-          • <b>postDeploy</b>：当且仅当该组的所有服务节点均成功返回时在本地触发（如健康检查或冒烟测试）。<br>
-          下方文本框<b>可直接打字手输命令</b>，也可点击「⚡ 弹窗选择命令」挑选预设。
+      <div class="step-card">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#2563eb">1</div>
+            <div class="sc-title">【${escapeHtml(groupName)} 组】调度前 · 本地命令 (preDeploy)</div>
+            <span class="sc-env-tag local">本地 · 仅一次</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPre', '${escapeHtml(groupName)}')">⚡ 弹窗选常用模版</button>
         </div>
+        <div class="form-group">
+          <textarea id="gh-preDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'preDeploy', this.value)"
+                    placeholder="可直接手写命令，每行一条&#10;例: cd frontend && pnpm build&#10;例: go build -o bin/api ./cmd/api">${escapeHtml(arr(grp.hooks.preDeploy))}</textarea>
+        </div>
+      </div>
 
-        <div class="grid" style="gap:14px">
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#2563eb">1</span>【${escapeHtml(groupName)} 组】并发启动前 · 本地命令 (preDeploy)</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地 · 仅一次</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPre', '${escapeHtml(groupName)}')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="gh-preDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'preDeploy', this.value)" placeholder="可在此直接手输命令，每行一条&#10;例: cd frontend && npm run build&#10;例: go build -o bin/api ./cmd/api">${escapeHtml(arr(grp.hooks.preDeploy))}</textarea>
+      <div class="step-card">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#10b981">2</div>
+            <div class="sc-title">【${escapeHtml(groupName)} 组】全部成功后 · 本地命令 (postDeploy)</div>
+            <span class="sc-env-tag local">本地 · 仅一次</span>
           </div>
-
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#16a34a">2</span>【${escapeHtml(groupName)} 组】全部成功后 · 本地命令 (postDeploy)</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地 · 仅一次</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPost', '${escapeHtml(groupName)}')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="gh-postDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'postDeploy', this.value)" placeholder="可在此直接手输命令，每行一条&#10;例: echo '该组部署完毕'&#10;例: curl -s http://127.0.0.1:8080/health">${escapeHtml(arr(grp.hooks.postDeploy))}</textarea>
-          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPost', '${escapeHtml(groupName)}')">⚡ 弹窗选常用模版</button>
+        </div>
+        <div class="form-group">
+          <textarea id="gh-postDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'postDeploy', this.value)"
+                    placeholder="可直接手写命令，每行一条&#10;例: echo '${escapeHtml(groupName)} 组节点部署完毕'&#10;例: curl -s http://127.0.0.1:8080/health">${escapeHtml(arr(grp.hooks.postDeploy))}</textarea>
         </div>
       </div>
     `;
@@ -994,47 +2056,50 @@
     notifyChange();
   }
 
-  function renderGlobalEditorInner() {
+  /* ===== 渲染：全局批次设置 ===== */
+  function renderGlobalEditorInner(container) {
     if (!deployConfig.hooks) deployConfig.hooks = {};
     const h = deployConfig.hooks;
     const arr = a => (a || []).join('\n');
 
-    document.getElementById('editor-inner').innerHTML = `
-      <div class="ed-head">
-        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px">
-          <span>⚙️</span> 全局批次生命周期设置
+    container.innerHTML = `
+      <div class="overview-banner">
+        <div class="ob-head">
+          <span style="font-size:16px;font-weight:700">⚙️ 全局批次生命周期设置</span>
+          <span class="host-tag" style="margin-left:auto;font-size:11.5px">全量节点统筹 · 本地各执行一次</span>
         </div>
-        <span class="chip">全节点统筹 · 本地仅执行一次</span>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6">
+          💡 <b>全局执行说明</b>：<b>preDeploy</b> 在本次批次所有服务节点并发调度前在本地运行一次，异常直接中止；<b>postDeploy</b> 在所有服务均返回成功后在本地运行一次。
+        </div>
       </div>
 
-      <div style="padding:10px 0 24px">
-        <div style="margin-bottom:14px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--muted);font-size:12px;line-height:1.6">
-          💡 <b>全局钩子说明</b>：<b>preDeploy</b> 在本批次所有服务器并发启动前在本地运行一次，失败立即中止；<b>postDeploy</b> 在所有服务均部署成功后在本地执行一次。<br>
-          下方文本框<b>可直接任意手输</b>，也可点击「⚡ 弹窗选择命令」从模版库选择追加。
+      <div class="step-card">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#2563eb">1</div>
+            <div class="sc-title">批次启动前 · 全局本地命令 (preDeploy)</div>
+            <span class="sc-env-tag local">本地 · 仅一次</span>
+          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPre', 'global')">⚡ 弹窗选常用模版</button>
         </div>
+        <div class="form-group">
+          <textarea id="glob-preDeploy" oninput="updGlobalHook('preDeploy', this.value)"
+                    placeholder="可直接在此手写命令，每行一条&#10;例: git pull --rebase&#10;例: npm run build">${escapeHtml(arr(h.preDeploy))}</textarea>
+        </div>
+      </div>
 
-        <div class="grid" style="gap:14px">
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#2563eb">1</span>批次并发前 · 执行命令 (preDeploy)</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地 · 仅一次</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPre', 'global')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="glob-preDeploy" oninput="updGlobalHook('preDeploy', this.value)" placeholder="可在此直接手写命令，每行一条&#10;例: git pull --rebase&#10;例: npm run build">${escapeHtml(arr(h.preDeploy))}</textarea>
+      <div class="step-card">
+        <div class="sc-header">
+          <div class="sc-title-group">
+            <div class="sc-badge" style="background:#10b981">2</div>
+            <div class="sc-title">批次全部成功后 · 全局本地命令 (postDeploy)</div>
+            <span class="sc-env-tag local">本地 · 仅一次</span>
           </div>
-
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#16a34a">2</span>批次全部成功后 · 执行命令 (postDeploy)</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地 · 仅一次</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPost', 'global')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="glob-postDeploy" oninput="updGlobalHook('postDeploy', this.value)" placeholder="可在此直接手写命令，每行一条&#10;例: echo '全局部署完成'&#10;例: curl -s 'https://oapi.dingtalk.com/robot/send?...'">${escapeHtml(arr(h.postDeploy))}</textarea>
-          </div>
+          <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPost', 'global')">⚡ 弹窗选常用模版</button>
+        </div>
+        <div class="form-group">
+          <textarea id="glob-postDeploy" oninput="updGlobalHook('postDeploy', this.value)"
+                    placeholder="可直接在此手写命令，每行一条&#10;例: echo '全局全量节点部署完成'&#10;例: curl -s 'https://oapi.dingtalk.com/robot/send?...'">${escapeHtml(arr(h.postDeploy))}</textarea>
         </div>
       </div>
     `;
@@ -1046,220 +2111,12 @@
     notifyChange();
   }
 
-  function renderEditorInner() {
-    const i = currentIndex;
-    const svc = deployConfig.services[i];
-    const enabled = svc.enabled !== false;
-    const s = svc.server || {}, u = svc.upload || {}, h = svc.hooks || {};
-    const arr = a => (a || []).join('\n');
-    const exclude = (u.exclude || []).join(', ');
-    const tagsStr = (svc.tags || []).join(', ');
-
-    document.getElementById('editor-inner').innerHTML = `
-      <div class="ed-head">
-        <input class="svc-name" value="${escapeHtml(svc.name || '')}" placeholder="服务名称"
-               oninput="upd('name', this.value)" onchange="onServiceNameChange()">
-        <span class="chip">${escapeHtml(s.host || 'host?')}:${s.port || 22}</span>
-        <label class="inline-check enable-switch" title="禁用后部署时跳过该单元">
-          <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleEnabled(this.checked)">
-          <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          启用
-        </label>
-        <button class="btn sm-btn" onclick="startDeploy({ targetServices: ['${escapeHtml(svc.name)}'] })">⚡ 仅部署此服务</button>
-        <button class="btn sm-btn" onclick="duplicateService(${i})">⧉ 复制</button>
-        <button class="btn danger-ghost sm-btn" onclick="deleteService(${i})">🗑 删除</button>
-      </div>
-
-      <!-- 分组与任务属性栏 -->
-      <div style="display:flex;gap:12px;padding:8px 14px;background:var(--panel-2);border-radius:8px;border:1px solid var(--border);align-items:center;flex-wrap:wrap;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">📁 分组 (Group):</span>
-          <input list="existing-groups" value="${escapeHtml(svc.group || 'default')}" placeholder="选择或新建组名"
-                 oninput="upd('group', this.value)"
-                 style="width:130px;padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text)">
-        </div>
-
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">🛠 任务类型 (Type):</span>
-          <select onchange="upd('type', this.value)" style="padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text);font-weight:500">
-            <option value="standard" ${(!svc.type || svc.type === 'standard') ? 'selected' : ''}>standard (全流程)</option>
-            <option value="exec_only" ${svc.type === 'exec_only' ? 'selected' : ''}>exec_only (纯命令执行)</option>
-            <option value="sync_only" ${svc.type === 'sync_only' ? 'selected' : ''}>sync_only (纯文件同步)</option>
-          </select>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">🌊 波次阶段:</span>
-          <input type="number" min="1" value="${svc.stage || 1}" oninput="upd('stage', parseInt(this.value)||1)"
-                 style="width:55px;padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text)" title="阶段升序串行执行，阶段内并发">
-        </div>
-
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:11.5px;font-weight:600;color:var(--muted)">🏷️ 标签 (Tags):</span>
-          <input value="${escapeHtml(tagsStr)}" placeholder="api, core (逗号分隔)"
-                 oninput="updTags(this.value)"
-                 style="width:140px;padding:4px 8px;font-size:12px;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;color:var(--text)">
-        </div>
-      </div>
-
-      <div class="tabs">
-        <button class="tab ${activeTab === 'server' ? 'active' : ''}" onclick="switchTab('server')">🖥 服务器连接</button>
-        <button class="tab ${activeTab === 'upload' ? 'active' : ''}" onclick="switchTab('upload')">📁 文件传输</button>
-        <button class="tab ${activeTab === 'hooks' ? 'active' : ''}" onclick="switchTab('hooks')">⚡ 生命周期钩子</button>
-      </div>
-
-      <!-- Tab 1: 服务器连接 -->
-      <div class="tab-pane ${activeTab === 'server' ? 'active' : ''}">
-        <div class="grid g3">
-          <div class="field"><label><span class="t">主机 IP / 域名 <b>*</b></span></label>
-            <input value="${escapeHtml(s.host || '')}" placeholder="192.168.1.100" oninput="updServer('host', this.value)"></div>
-          <div class="field"><label><span class="t">SSH 端口</span></label>
-            <input type="number" value="${s.port || 22}" oninput="updServer('port', parseInt(this.value)||22)"></div>
-          <div class="field"><label><span class="t">用户名 <b>*</b></span></label>
-            <input value="${escapeHtml(s.username || '')}" placeholder="root" oninput="updServer('username', this.value)"></div>
-          <div class="field"><label><span class="t">密码</span></label>
-            <input type="password" value="${escapeHtml(s.password || '')}" placeholder="密码 / 私钥二选一" oninput="updServer('password', this.value)">
-            <div class="hint">保持 ****** 则沿用现有安全密码或环境变量</div></div>
-          <div class="field"><label><span class="t">私钥路径</span></label>
-            <input value="${escapeHtml(s.privateKeyPath || '')}" placeholder="~/.ssh/id_rsa" oninput="updServer('privateKeyPath', this.value)"></div>
-          <div class="field"><label><span class="t">私钥口令 (Passphrase)</span></label>
-            <input type="password" value="${escapeHtml(s.passphrase || '')}" placeholder="无口令可留空" oninput="updServer('passphrase', this.value)">
-            <div class="hint">若私钥受密码保护请在此填写</div></div>
-          <div class="field"><label><span class="t">SSH 主机指纹 (Fingerprint)</span></label>
-            <input value="${escapeHtml(s.hostKeyFingerprint || '')}" placeholder="选填 SHA256:..." oninput="updServer('hostKeyFingerprint', this.value)">
-            <div class="hint">防中间人攻击，留空则跳过主机密钥严格比对</div></div>
-          <div class="field"><label><span class="t">连接超时（秒）</span></label>
-            <input type="number" value="${s.connectTimeout || 15}" oninput="updServer('connectTimeout', parseInt(this.value)||15)"></div>
-        </div>
-
-        <div style="margin-top:16px;display:flex;align-items:center;gap:10px;padding-top:12px;border-top:1px solid var(--border)">
-          <button class="btn" id="btn-test-conn" onclick="testConnection()">🔌 测试 SSH 连接</button>
-          <span id="conn-result" style="font-size:12px;color:var(--muted)"></span>
-        </div>
-      </div>
-
-      <!-- Tab 2: 文件传输 (支持直接手输 + 唤起 Windows 原生系统文件/目录选择框) -->
-      <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}">
-        <div class="grid g2">
-          <div class="field">
-            <label>
-              <span class="t">本地源路径 (localPath) <b>*</b></span>
-              <div style="display:flex;gap:6px">
-                <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的文件夹选择对话框" onclick="pickNativePath('folder')">📁 选本地目录</button>
-                <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的单文件选择对话框" onclick="pickNativePath('file')">📄 选本地文件</button>
-              </div>
-            </label>
-            <div class="input-action-group">
-              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="直接键盘输入或粘贴路径，亦可点击上方选目录/文件" oninput="updUpload('localPath', this.value)">
-            </div>
-            <div class="hint">支持直接键盘打字输入绝对/相对路径，点击上方按钮可直接唤起原生 Windows 选择对话框</div>
-          </div>
-
-          <div class="field">
-            <label>
-              <span class="t">远端目标路径 (remotePath) <b>*</b></span>
-            </label>
-            <div class="input-action-group">
-              <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}" placeholder="直接键盘输入远端目录，例如: /opt/app/my-app"
-                     oninput="updUpload('remotePath', this.value);checkDangerousPath(this.value)">
-            </div>
-            <div class="danger-alert" id="danger-path-alert">
-              ⚠️ 警告：检测到该路径属于关键系统目录，在启用「清空目录」时将被严密拦截阻断！
-            </div>
-            <div class="hint">远端 Linux 存放目标绝对路径，父级目录不存在时将自动创建</div>
-          </div>
-
-          <div class="field">
-            <label><span class="t">排除规则（逗号分隔，支持通配符）</span></label>
-            <input value="${escapeHtml(exclude)}" placeholder="可直接输入，例: .git, *.log, node_modules" oninput="updExclude(this.value)">
-            <div class="hint" style="margin-top:5px">快速追加标签: 
-              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('.git')">+.git</span>
-              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('node_modules')">+node_modules</span>
-              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('*.log')">+*.log</span>
-              <span style="color:var(--accent);cursor:pointer;text-decoration:underline" onclick="addExcludeRule('.env')">+.env</span>
-            </div>
-          </div>
-
-          <div class="field" style="display:flex;flex-direction:column;justify-content:flex-start">
-            <label class="inline-check">
-              <input type="checkbox" id="check-cleanRemote" ${u.cleanRemote ? 'checked' : ''}
-                     onchange="updUpload('cleanRemote', this.checked);checkDangerousPath(document.getElementById('input-remotePath').value)">
-              <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              上传前清空远端目标目录 (cleanRemote)
-            </label>
-            <div class="hint" style="color:var(--amber)">⚠️ 注意：若启用将先递归清空目标目录全部文件，请确保目标路径精确！</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab 3: 生命周期钩子 (支持直接多行输入 + 弹出选择框挑选) -->
-      <div class="tab-pane ${activeTab === 'hooks' ? 'active' : ''}">
-        <div class="hook-grid">
-          <!-- 象限 1: 上传前 本地 -->
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#64748b">1</span>上传前 · 执行命令</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadLocal')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="hook-preUploadLocal" oninput="updHook('preUploadLocal', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: npm run build&#10;例: go build -o bin/app .">${escapeHtml(arr(h.preUploadLocal))}</textarea>
-          </div>
-
-          <!-- 象限 2: 上传前 远端 -->
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:#64748b">2</span>上传前 · 执行命令</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where remote">远端</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadRemote')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="hook-preUploadRemote" oninput="updHook('preUploadRemote', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: systemctl stop my-app || true&#10;例: mkdir -p /opt/app/backup">${escapeHtml(arr(h.preUploadRemote))}</textarea>
-          </div>
-
-          <!-- 象限 3: 上传后 远端 -->
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:var(--accent)">3</span>上传后 · 执行命令</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where remote">远端</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadRemote')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="hook-postUploadRemote" oninput="updHook('postUploadRemote', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: systemctl daemon-reload && systemctl restart my-app&#10;例: curl -sf http://127.0.0.1:8080/health || exit 1">${escapeHtml(arr(h.postUploadRemote))}</textarea>
-          </div>
-
-          <!-- 象限 4: 上传后 本地 -->
-          <div class="hook-card">
-            <div class="hc-head">
-              <div class="hc-left"><span class="step" style="background:var(--accent)">4</span>上传后 · 执行命令</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="where local">本地</span>
-                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadLocal')">⚡ 弹窗选择命令</button>
-              </div>
-            </div>
-            <textarea id="hook-postUploadLocal" oninput="updHook('postUploadLocal', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: echo '部署完毕'&#10;例: curl -s http://192.168.1.100:8080/health">${escapeHtml(arr(h.postUploadLocal))}</textarea>
-          </div>
-          <div class="flow-hint">执行顺序：<b>①本地前置</b> → SSH 连接 → <b>②远端前置</b> → SFTP 上传 → <b>③远端后置</b> → <b>④本地后置</b>；文本框支持自由手输与随时修改，点击右上角可呼出常用模版选择框。</div>
-        </div>
-      </div>
-    `;
-
-    checkDangerousPath(u.remotePath || '');
-  }
-
-  function switchTab(t) { activeTab = t; renderEditorInner(); }
-
   /* ===== 唤起操作系统原生文件/目录选择框 ===== */
   async function pickNativePath(mode = 'folder') {
-    showToast(mode === 'file' ? '正在唤起 Windows 文件选择框...' : '正在唤起 Windows 文件夹选择框...');
+    showToast(mode === 'file' ? '正在唤起文件选择对话框...' : '正在唤起文件夹选择对话框...');
     try {
       const resp = await fetch(`/api/system/pick-path?mode=${mode}`);
-      if (!resp.ok) {
-        throw new Error(await resp.text());
-      }
+      if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
       if (data.status === 'ok' && data.path) {
         const s = deployConfig.services[currentIndex];
@@ -1268,7 +2125,7 @@
         const inp = document.getElementById('input-localPath');
         if (inp) inp.value = data.path;
         notifyChange();
-        showToast('✅ 已选定本地路径: ' + data.path);
+        showToast('✅ 已选定路径: ' + data.path);
       } else if (data.status === 'canceled') {
         showToast('已取消选择');
       } else if (data.error) {
@@ -1279,20 +2136,15 @@
     }
   }
 
-  /* ===== 交互式命令选择弹窗逻辑 (Command Picker Dialog) ===== */
+  /* ===== 常用命令预设弹窗 (Picker Modal) ===== */
   function onPickerBackdropClick(e) {
-    if (e.target.id === 'picker-modal') {
-      closePicker();
-    }
+    if (e.target.id === 'picker-modal') closePicker();
   }
-
   function closePicker() {
     document.getElementById('picker-modal').classList.remove('show');
   }
 
-  // 呼出生命周期常用预备命令选择弹窗
   function openCommandPicker(stageKey, contextVal = null) {
-    pickerState.type = 'cmd';
     pickerState.targetField = stageKey;
     pickerState.targetContext = contextVal;
     pickerState.activeCategory = '全部';
@@ -1300,21 +2152,19 @@
     pickerState.selectedValues = [];
 
     const stageNames = {
-      preUploadLocal: '上传前·本地构建',
-      preUploadRemote: '上传前·远端停机/环境',
-      postUploadRemote: '上传后·远端重启/守护',
-      postUploadLocal: '上传后·本地回显/探测',
-      groupPre: '分组启动前·本地命令',
-      groupPost: '分组成功后·本地命令',
-      globPre: '批次启动前·全局命令',
-      globPost: '批次成功后·全局通知'
+      preUploadLocal: '阶段一 · 本地构建前置',
+      preUploadRemote: '阶段三 · 远端环境准备/停服',
+      postUploadRemote: '阶段四 · 远端重启守护/探测',
+      postUploadLocal: '阶段五 · 本地善后/上线通知',
+      groupPre: '分组启动前 · 组本地命令',
+      groupPost: '分组成功后 · 组本地命令',
+      globPre: '批次启动前 · 全局命令',
+      globPost: '批次成功后 · 全局通知'
     };
 
-    const titleEl = document.getElementById('pd-title');
+    const titleEl = document.getElementById('pc-title');
     titleEl.innerHTML = `<span>⚡</span> 选取常用预备命令 <span style="font-size:12px;color:var(--accent)">(${stageNames[stageKey] || stageKey})</span>`;
-    document.getElementById('pd-search').value = '';
-    document.getElementById('pd-foot-tip').textContent = '点击可单选/多选命令一键追加到当前文本框中，原手输内容完整保留';
-    document.getElementById('pd-btn-confirm').textContent = '追加选定命令';
+    document.getElementById('pc-search').value = '';
 
     renderPickerCategories();
     renderPickerList();
@@ -1330,11 +2180,11 @@
     const catsSet = new Set(['全部']);
     rawItems.forEach(item => item.cat && catsSet.add(item.cat));
 
-    const catsEl = document.getElementById('pd-cats');
+    const catsEl = document.getElementById('pc-category-tabs');
     catsEl.innerHTML = '';
     catsSet.forEach(cat => {
       const btn = document.createElement('button');
-      btn.className = 'pd-cat-btn' + (pickerState.activeCategory === cat ? ' active' : '');
+      btn.className = 'pc-cat-btn' + (pickerState.activeCategory === cat ? ' active' : '');
       btn.textContent = cat;
       btn.onclick = () => {
         pickerState.activeCategory = cat;
@@ -1345,17 +2195,16 @@
     });
   }
 
-  function onPickerSearch(val) {
+  function onPickerSearchInput(val) {
     pickerState.searchKeyword = (val || '').trim().toLowerCase();
     renderPickerList();
   }
 
   function renderPickerList() {
-    const listEl = document.getElementById('pd-list');
+    const listEl = document.getElementById('pc-list');
     listEl.innerHTML = '';
     const rawItems = getRawPickerItems();
 
-    // 解析当前上下文宏变量
     let currentSvcName = 'app';
     let currentHost = '127.0.0.1';
     let currentRPath = '/opt/app/app';
@@ -1379,13 +2228,12 @@
     });
 
     if (filtered.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;padding:36px;color:var(--faint);font-size:12.5px">未找到匹配的命令选项</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:36px;color:var(--faint);font-size:12.5px">未找到匹配的命令模版</div>';
       return;
     }
 
-    filtered.forEach((item, idx) => {
-      const rawCode = item.cmd;
-      const computedCode = rawCode
+    filtered.forEach(item => {
+      const computedCode = item.cmd
         .replace(/{name}/g, currentSvcName)
         .replace(/{remotePath}/g, currentRPath)
         .replace(/{host}/g, currentHost);
@@ -1393,35 +2241,32 @@
       const isSelected = pickerState.selectedValues.includes(computedCode);
 
       const card = document.createElement('div');
-      card.className = 'pd-item' + (isSelected ? ' selected' : '');
+      card.className = 'pc-item' + (isSelected ? ' selected' : '');
       card.onclick = () => {
         const existsIdx = pickerState.selectedValues.indexOf(computedCode);
-        if (existsIdx >= 0) {
-          pickerState.selectedValues.splice(existsIdx, 1);
-        } else {
-          pickerState.selectedValues.push(computedCode);
-        }
+        if (existsIdx >= 0) pickerState.selectedValues.splice(existsIdx, 1);
+        else pickerState.selectedValues.push(computedCode);
         renderPickerList();
       };
 
       card.innerHTML = `
-        <input type="checkbox" class="pd-item-check" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();this.parentNode.click()">
-        <div class="pd-item-main">
-          <div class="pd-item-title">
+        <input type="checkbox" style="margin-top:3px" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();this.parentNode.click()">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px">
             <span>${escapeHtml(item.name)}</span>
-            <span class="pd-item-cat">${escapeHtml(item.cat)}</span>
+            <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#eef2f7;color:var(--muted)">${escapeHtml(item.cat)}</span>
           </div>
-          <div class="pd-item-desc">${escapeHtml(item.desc || '')}</div>
-          <div class="pd-item-code">${escapeHtml(computedCode)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(item.desc || '')}</div>
+          <div class="pc-item-code">${escapeHtml(computedCode)}</div>
         </div>
       `;
       listEl.appendChild(card);
     });
   }
 
-  function confirmPicker() {
+  function confirmPickerSelection() {
     if (pickerState.selectedValues.length === 0) {
-      showToast('请先点击勾选至少一条命令', 'error');
+      showToast('请先点击勾选至少一条命令模版', 'error');
       return;
     }
 
@@ -1445,6 +2290,8 @@
       grp.hooks[field].push(...cmds);
       const ta = document.getElementById('gh-' + field);
       if (ta) ta.value = grp.hooks[field].join('\n');
+      const taSvc = document.getElementById('gh-' + field + '-in-svc');
+      if (taSvc) taSvc.value = grp.hooks[field].join('\n');
     } else {
       const s = deployConfig.services[currentIndex];
       if (!s.hooks) s.hooks = {};
@@ -1465,19 +2312,18 @@
     if (!Array.isArray(s.upload.exclude)) s.upload.exclude = [];
     if (!s.upload.exclude.includes(rule)) {
       s.upload.exclude.push(rule);
-      renderEditorInner();
+      renderServicePipelineEditor(document.getElementById('editor-container'));
       notifyChange();
       showToast('已追加排除规则: ' + rule);
     }
   }
 
   function checkDangerousPath(p) {
-    const alertBox = document.getElementById('danger-path-alert');
-    const isClean = document.getElementById('check-cleanRemote')?.checked;
+    const alertBox = document.getElementById('danger-path-banner');
     if (!alertBox) return;
     const clean = (p || '').trim().replace(/\\/g, '/').replace(/\/+/g, '/');
     const isDangerous = DANGEROUS_PATHS.includes(clean);
-    if (isDangerous && isClean) {
+    if (isDangerous) {
       alertBox.classList.add('show');
     } else {
       alertBox.classList.remove('show');
@@ -1493,44 +2339,93 @@
   async function testConnection() {
     const s = deployConfig.services[currentIndex];
     const btn = document.getElementById('btn-test-conn');
-    const res = document.getElementById('conn-result');
-    if (!btn || !res) return;
+    const res = document.getElementById('conn-result-inline');
+    if (!btn) return;
 
     btn.disabled = true;
-    btn.textContent = '⏳ 测试连接中...';
-    res.style.color = 'var(--muted)';
-    res.textContent = '正在拨号并执行 SSH 认证握手...';
+    btn.textContent = '⏳ 探测中...';
+    if (res) {
+      res.style.color = 'var(--muted)';
+      res.textContent = '正在发起 SSH 握手并验证密钥/密码...';
+    }
 
     try {
       const resp = await fetch('/api/server/test-connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serviceName: s.name,
-          server: s.server || {}
-        })
+        body: JSON.stringify({ serviceName: s.name, server: s.server || {} })
       });
-
       const data = await resp.json();
       if (data.status === 'ok') {
-        res.style.color = 'var(--green)';
-        res.innerHTML = `✅ <b>握手连通成功</b> (耗时: ${data.latencyMs}ms)`;
+        healthMap[s.name] = { ok: true, latencyMs: data.latencyMs };
+        if (res) {
+          res.style.color = 'var(--green)';
+          res.innerHTML = `✅ <b>握手连通成功</b> (往返延迟: ${data.latencyMs}ms)`;
+        }
+        showToast(`✅ SSH 连接成功 (${data.latencyMs}ms)`);
       } else {
-        res.style.color = 'var(--red)';
-        res.innerHTML = `❌ <b>连接失败:</b> ${escapeHtml(data.error || '未知错误')}`;
+        healthMap[s.name] = { ok: false, error: data.error || '握手失败' };
+        if (res) {
+          res.style.color = 'var(--red)';
+          res.innerHTML = `❌ <b>连接失败:</b> ${escapeHtml(data.error || '未知异常')}`;
+        }
+        showToast('SSH 连接失败', 'error');
       }
     } catch (err) {
-      res.style.color = 'var(--red)';
-      res.textContent = '请求异常: ' + err.message;
+      healthMap[s.name] = { ok: false, error: err.message };
+      if (res) {
+        res.style.color = 'var(--red)';
+        res.textContent = '请求失败: ' + err.message;
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = '🔌 测试 SSH 连接';
+      renderSidebar();
     }
+  }
+
+  // 批量并发探测所有服务 SSH 连通性
+  async function testAllConnections() {
+    const eligible = getEligibleDeployServices();
+    if (eligible.length === 0) {
+      showToast('当前无可用服务单元');
+      return;
+    }
+    showToast(`正在批量探测 ${eligible.length} 个主机节点...`);
+
+    const promises = eligible.map(async s => {
+      try {
+        const resp = await fetch('/api/server/test-connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serviceName: s.name, server: s.server || {} })
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+          healthMap[s.name] = { ok: true, latencyMs: data.latencyMs };
+        } else {
+          healthMap[s.name] = { ok: false, error: data.error || '握手失败' };
+        }
+      } catch (err) {
+        healthMap[s.name] = { ok: false, error: err.message };
+      }
+    });
+
+    await Promise.all(promises);
+    renderSidebar();
+    if (currentIndex >= 0) renderEditor();
+    showToast('批量连通性探测完成');
   }
 
   /* ===== 数据同步 ===== */
   function upd(field, val) {
     deployConfig.services[currentIndex][field] = val;
+    notifyChange();
+  }
+  function updGroupField(val) {
+    deployConfig.services[currentIndex].group = val;
+    renderSidebar();
+    renderServicePipelineEditor(document.getElementById('editor-container'));
     notifyChange();
   }
   function updTags(val) {
@@ -1564,9 +2459,10 @@
     notifyChange();
   }
 
-  /* ===== 服务单元增删复制 ===== */
+  /* ===== 服务增删复制 ===== */
   function addService() {
     isGlobalView = false;
+    currentGroupView = null;
     const n = deployConfig.services.length + 1;
     deployConfig.services.push({
       name: `service-node-${n}`,
@@ -1575,11 +2471,10 @@
       stage: 1,
       tags: [],
       server: { host: '', port: 22, username: 'root', password: '', connectTimeout: 15 },
-      upload: { localPath: './dist', remotePath: `/opt/app/service-${n}`, exclude: ['.git', '*.log', 'node_modules'], cleanRemote: false },
+      upload: { localPath: './dist', remotePath: `/opt/app/service-${n}`, exclude: ['.git', '*.log', 'node_modules'] },
       hooks: {}
     });
     currentIndex = deployConfig.services.length - 1;
-    activeTab = 'server';
     renderAll();
     showToast('已创建新服务单元');
   }
@@ -1595,6 +2490,7 @@
 
   function deleteService(i) {
     if (!confirm(`确定删除服务单元「${deployConfig.services[i].name || '未命名'}」？`)) return;
+    delete healthMap[deployConfig.services[i].name];
     deployConfig.services.splice(i, 1);
     if (currentIndex >= deployConfig.services.length) currentIndex = deployConfig.services.length - 1;
     renderAll();
@@ -1603,7 +2499,7 @@
 
   /* ===== 保存 / 导出 / 导入 ===== */
   function snapshot() {
-    deployConfig.parallel = document.getElementById('global-parallel').checked;
+    deployConfig.parallel = document.getElementById('global-parallel-sw').checked;
     return JSON.stringify(deployConfig, null, 2);
   }
 
@@ -1614,7 +2510,7 @@
       });
       if (!resp.ok) throw new Error(await resp.text());
       markClean();
-      showToast('✅ 配置已保存到 deploy.json');
+      showToast('✅ 配置已安全保存到 deploy.json');
     } catch (err) {
       showToast('保存失败: ' + err.message, 'error');
     }
@@ -1634,7 +2530,7 @@
     reader.onload = e => {
       try {
         const parsed = JSON.parse(e.target.result);
-        if (!parsed || typeof parsed !== 'object') throw new Error('无效的配置文件格式');
+        if (!parsed || typeof parsed !== 'object') throw new Error('无效的 JSON 配置文件');
         deployConfig = parsed;
         if (!Array.isArray(deployConfig.services)) deployConfig.services = [];
         if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
@@ -1654,18 +2550,49 @@
     reader.readAsText(file);
   }
 
-  /* ===== 部署与终端交互增强 ===== */
+  /* ===== 底部终端抽屉控制 ===== */
+  function setDrawerState(st) {
+    drawerState = st;
+    const el = document.getElementById('terminal-drawer');
+    const toggleBtn = document.getElementById('btn-drawer-toggle');
+    el.className = 'terminal-drawer ' + st;
+    if (st === 'collapsed') {
+      toggleBtn.textContent = '⤢ 展开';
+      toggleBtn.title = '展开终端抽屉 (Ctrl+`)';
+    } else if (st === 'split') {
+      toggleBtn.textContent = '⤢ 全屏';
+      toggleBtn.title = '撑满全屏排错';
+    } else if (st === 'maximized') {
+      toggleBtn.textContent = '⤡ 半屏';
+      toggleBtn.title = '还原为半屏分栏';
+    }
+  }
+
+  function cycleDrawerHeight() {
+    if (drawerState === 'collapsed') setDrawerState('split');
+    else if (drawerState === 'split') setDrawerState('maximized');
+    else setDrawerState('collapsed');
+  }
+
+  function toggleDrawerState() {
+    if (drawerState === 'collapsed') setDrawerState('split');
+  }
+
+  /* ===== 部署调度与实时终端 ===== */
   async function startDeploy(opts = {}) {
     await saveConfig();
-    const badge = document.getElementById('deploy-badge');
-    const term = document.getElementById('terminal-output');
-    const cancelBtn = document.getElementById('cancel-deploy-btn');
-    document.getElementById('deploy-modal').classList.add('show');
-    document.getElementById('live-dot').style.display = '';
+
+    setDrawerState('split');
+    const badge = document.getElementById('drawer-status-badge');
+    const term = document.getElementById('terminal-body');
+    const cancelBtn = document.getElementById('btn-cancel-deploy');
+    const pulse = document.getElementById('drawer-live-pulse');
+
+    pulse.style.display = '';
     if (cancelBtn) cancelBtn.style.display = '';
     term.innerHTML = '';
-    badge.textContent = '调度中...';
-    badge.className = 'badge running';
+    badge.textContent = '执行中...';
+    badge.className = 'drawer-badge running';
     userScrolledUp = false;
 
     const scenario = opts.scenario || selectedScenario || '';
@@ -1681,139 +2608,199 @@
     if (opts.targetServices?.length) targetDesc = `服务 [${opts.targetServices.join(', ')}]`;
     else if (opts.targetGroups?.length) targetDesc = `分组 [${opts.targetGroups.join(', ')}]`;
     else if (scenario) targetDesc = `场景 [${scenario}]`;
-    term.innerHTML = `<div class="term-line a-dim">==> 触发部署目标: ${escapeHtml(targetDesc)}</div>`;
+
+    appendTermLine(`==> 🚀 部署调度启动: 目标=${targetDesc}, 全并发=${deployConfig.parallel}`, 'a-blue a-b');
+
+    // 动态生成单节点日志过滤药丸
+    updateDrawerFilterPills(opts.targetServices);
 
     if (eventSource) eventSource.close();
     eventSource = new EventSource('/api/deploy/events');
     eventSource.onmessage = e => {
       const d = e.data;
-      if (d === '[[DEPLOY_COMPLETED_SUCCESS]]') { setBadge('ok', '部署成功'); return; }
-      if (d === '[[DEPLOY_COMPLETED_FAILED]]') { setBadge('fail', '部署失败'); return; }
-      if (d === '[[DEPLOY_CANCELED]]') { setBadge('fail', '已中止'); return; }
-
-      const div = document.createElement('div');
-      div.className = 'term-line';
-      div.innerHTML = ansiToHtml(d);
-      term.appendChild(div);
-
-      if (!userScrolledUp) {
-        term.scrollTop = term.scrollHeight;
+      if (d === '[[DEPLOY_COMPLETED_SUCCESS]]') {
+        setTerminalBadge('ok', '部署成功');
+        showToast('🎉 本批次所有服务均已成功部署！');
+        return;
       }
+      if (d === '[[DEPLOY_COMPLETED_FAILED]]') {
+        setTerminalBadge('fail', '部署失败');
+        showToast('❌ 部署流水线中断，请查阅终端日志', 'error');
+        return;
+      }
+      if (d === '[[DEPLOY_CANCELED]]') {
+        setTerminalBadge('fail', '已中止');
+        showToast('已中止部署');
+        return;
+      }
+
+      appendTermLineRaw(d);
     };
 
     try {
       const resp = await fetch('/api/deploy', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
         throw new Error(errData.error || await resp.text());
       }
-      badge.textContent = '执行中...';
     } catch (err) {
-      setBadge('fail', '触发失败');
-      term.innerHTML += `<div class="term-line a-red">触发部署失败: ${escapeHtml(err.message)}</div>`;
+      setTerminalBadge('fail', '触发失败');
+      appendTermLine(`触发部署失败: ${err.message}`, 'a-red');
     }
   }
 
+  function updateDrawerFilterPills(specificServices) {
+    const pillsContainer = document.getElementById('drawer-filter-pills');
+    pillsContainer.innerHTML = '';
+    activeLogFilter = '';
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'filter-pill-btn active';
+    allBtn.textContent = '全部日志';
+    allBtn.onclick = () => {
+      activeLogFilter = '';
+      pillsContainer.querySelectorAll('.filter-pill-btn').forEach(b => b.classList.remove('active'));
+      allBtn.classList.add('active');
+      applyLogFilter();
+    };
+    pillsContainer.appendChild(allBtn);
+
+    const targetList = specificServices && specificServices.length ? specificServices : getEligibleDeployServices().map(s => s.name);
+    targetList.forEach(name => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-pill-btn';
+      btn.textContent = name;
+      btn.onclick = () => {
+        activeLogFilter = name;
+        pillsContainer.querySelectorAll('.filter-pill-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyLogFilter();
+      };
+      pillsContainer.appendChild(btn);
+    });
+  }
+
+  function appendTermLine(text, extraClass = '') {
+    const term = document.getElementById('terminal-body');
+    const div = document.createElement('div');
+    div.className = 'term-line ' + extraClass;
+    div.textContent = text;
+    term.appendChild(div);
+    if (!userScrolledUp) term.scrollTop = term.scrollHeight;
+  }
+
+  function appendTermLineRaw(raw) {
+    const term = document.getElementById('terminal-body');
+    const div = document.createElement('div');
+    div.className = 'term-line';
+    div.dataset.raw = raw;
+    div.innerHTML = ansiToHtml(raw);
+
+    // 判断单节点过滤
+    if (activeLogFilter && !raw.includes(`[${activeLogFilter}]`)) {
+      div.style.display = 'none';
+    }
+
+    term.appendChild(div);
+    if (!userScrolledUp) term.scrollTop = term.scrollHeight;
+  }
+
+  function applyLogFilter() {
+    const term = document.getElementById('terminal-body');
+    const searchVal = document.getElementById('drawer-search-input').value.trim().toLowerCase();
+    const lines = term.querySelectorAll('.term-line');
+
+    lines.forEach(line => {
+      const raw = line.dataset.raw || line.textContent || '';
+      const matchNode = !activeLogFilter || raw.includes(`[${activeLogFilter}]`);
+      const matchSearch = !searchVal || raw.toLowerCase().includes(searchVal);
+      line.style.display = (matchNode && matchSearch) ? '' : 'none';
+    });
+  }
+
+  function filterLogs(val) {
+    applyLogFilter();
+  }
+
   async function cancelDeploy() {
-    if (!confirm('确定中止当前正在执行的部署任务？')) return;
+    if (!confirm('确定中止当前正在执行的部署流水线？')) return;
     try {
       const resp = await fetch('/api/deploy/cancel', { method: 'POST' });
-      if (resp.ok) {
-        showToast('已发送中止请求...');
-      } else {
+      if (resp.ok) showToast('已发送中止信号...');
+      else {
         const data = await resp.json().catch(() => ({}));
         showToast(data.error || '中止请求失败', 'error');
       }
     } catch (err) {
-      showToast('网络错误: ' + err.message, 'error');
+      showToast('网络异常: ' + err.message, 'error');
     }
   }
 
-  function setBadge(cls, text) {
-    const badge = document.getElementById('deploy-badge');
+  function setTerminalBadge(cls, text) {
+    const badge = document.getElementById('drawer-status-badge');
     badge.textContent = text;
-    badge.className = 'badge ' + cls;
-    document.getElementById('live-dot').style.display = 'none';
-    const cancelBtn = document.getElementById('cancel-deploy-btn');
+    badge.className = 'drawer-badge ' + cls;
+    document.getElementById('drawer-live-pulse').style.display = 'none';
+    const cancelBtn = document.getElementById('btn-cancel-deploy');
     if (cancelBtn) cancelBtn.style.display = 'none';
     if (eventSource) { eventSource.close(); eventSource = null; }
   }
 
   function clearTerminal() {
-    document.getElementById('terminal-output').innerHTML = '';
+    document.getElementById('terminal-body').innerHTML = '';
     userScrolledUp = false;
-    document.getElementById('scroll-bottom-btn').classList.remove('show');
-  }
-
-  function closeTerminal() {
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    document.getElementById('deploy-modal').classList.remove('show');
-  }
-
-  function filterLogs(val) {
-    const query = (val || '').trim().toLowerCase();
-    const lines = document.querySelectorAll('#terminal-output .term-line');
-    lines.forEach(l => {
-      if (!query || l.textContent.toLowerCase().includes(query)) {
-        l.style.display = '';
-      } else {
-        l.style.display = 'none';
-      }
-    });
+    document.getElementById('term-scroll-btn').classList.remove('show');
   }
 
   function copyTerminalText() {
-    const term = document.getElementById('terminal-output');
-    const text = term.innerText;
-    if (!text) { showToast('当前暂无日志可复制'); return; }
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('✅ 日志已复制到剪贴板');
-    }).catch(err => {
-      showToast('复制失败: ' + err.message, 'error');
-    });
+    const text = document.getElementById('terminal-body').innerText;
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('✅ 终端日志已复制到剪贴板'))
+      .catch(() => showToast('复制失败', 'error'));
   }
 
   function exportTerminalLog() {
-    const term = document.getElementById('terminal-output');
-    const text = term.innerText;
-    if (!text) { showToast('当前暂无日志可导出'); return; }
-    const now = new Date();
-    const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const text = document.getElementById('terminal-body').innerText;
     const a = document.createElement('a');
     a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
-    a.download = `deploy-${ts}.log`;
+    a.download = `deploy-${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.log`;
     a.click();
-    showToast('✅ 日志已导出为文件');
   }
 
-  /* ===== 工具函数 ===== */
-  function ansiToHtml(text) {
-    let s = escapeHtml(text)
-      .replace(/\x1b\[1m/g, '<span class="a-b">')
-      .replace(/\x1b\[31m/g, '<span class="a-red">')
-      .replace(/\x1b\[32m/g, '<span class="a-green">')
-      .replace(/\x1b\[33m/g, '<span class="a-yellow">')
-      .replace(/\x1b\[34m/g, '<span class="a-blue">')
-      .replace(/\x1b\[35m/g, '<span class="a-magenta">')
-      .replace(/\x1b\[36m/g, '<span class="a-cyan">')
-      .replace(/\x1b\[0m/g, '</span>');
-    s = s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\x1b/g, '');
-    return s;
+  /* ===== ANSI 终端色彩转换 ===== */
+  function ansiToHtml(str) {
+    const ansiMap = [
+      { code: 31, cls: 'a-red' },
+      { code: 32, cls: 'a-green' },
+      { code: 33, cls: 'a-yellow' },
+      { code: 34, cls: 'a-blue' },
+      { code: 35, cls: 'a-magenta' },
+      { code: 36, cls: 'a-cyan' },
+      { code: 90, cls: 'a-dim' },
+      { code: 1,  cls: 'a-b' }
+    ];
+    let out = escapeHtml(str);
+    ansiMap.forEach(({ code, cls }) => {
+      out = out.split(new RegExp(`\x1b\\[${code}m`, 'g')).join(`<span class="${cls}">`);
+    });
+    out = out.replace(/\x1b\[0m/g, '</span>');
+    out = out.replace(/\x1b\[[0-9;]*m/g, '');
+    return out;
   }
 
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function showToast(msg, type = 'success') {
-    const t = document.getElementById('toast');
+    const t = document.getElementById('toast-msg');
     t.textContent = msg;
-    t.className = 'toast ' + type + ' show';
+    t.className = 'toast-msg ' + type + ' show';
     clearTimeout(t._timer);
     t._timer = setTimeout(() => t.classList.remove('show'), 2600);
   }

@@ -1,103 +1,61 @@
 {
   "parallel": true,
-  "hooks": {
-    "preDeploy": [
-      "echo \"[Global Pre-Hook] 全局统一前置准备（仅执行一次）...\""
-    ],
-    "postDeploy": [
-      "echo \"[Global Post-Hook] 全局统一后置通知（全部成功后仅执行一次）...\""
-    ]
-  },
+  "hooks": {},
   "groups": [
     {
-      "name": "infra",
-      "description": "基础设施与数据库迁移组",
-      "hooks": {
-        "preDeploy": [
-          "echo \"[Infra Pre-Hook] 基础设施组本地环境预检...\""
-        ],
-        "postDeploy": [
-          "echo \"[Infra Post-Hook] 基础设施组服务就绪！\""
-        ]
-      }
-    },
-    {
       "name": "backend",
-      "description": "后端核心微服务集群",
+      "description": "后端微服务集群（本地仅编译一次，并发分发至所有节点）",
       "hooks": {
         "preDeploy": [
-          "echo \"[Backend Pre-Hook] 后端微服务统一本地编译构建...\""
+          "echo '==\u003e [Backend Global] 进入本地后端目录并执行 Maven 打包（仅执行一次）...'",
+          "cd D:/projects/my-backend \u0026\u0026 mvn clean package -DskipTests"
         ],
         "postDeploy": [
-          "echo \"[Backend Post-Hook] 后端微服务集群全部节点成功发布！\""
+          "echo '==\u003e [Backend Global] 后端微服务集群所有节点部署完毕！'"
         ]
       }
     },
     {
       "name": "frontend",
-      "description": "前端单页面与静态资源组",
+      "description": "前端集群（本地仅构建压缩一次，并发分发解压至所有节点）",
       "hooks": {
         "preDeploy": [
-          "echo \"[Frontend Pre-Hook] 前端本地静态打包构建...\""
+          "echo '==\u003e [Frontend Global] 进入本地前端目录打包并压缩 dist（仅执行一次）...'",
+          "cd D:/projects/my-frontend \u0026\u0026 npm run build \u0026\u0026 tar -czf dist.tar.gz -C dist ."
         ],
         "postDeploy": [
-          "echo \"[Frontend Post-Hook] 前端静态资源发布完毕！\""
+          "echo '==\u003e [Frontend Global] 前端集群所有节点静态资源更新完毕！'"
         ]
       }
     }
   ],
   "scenarios": [
     {
-      "name": "prod",
-      "description": "生产全量部署 (先基础设施与后端，最后前端)",
+      "name": "all",
+      "description": "全量发布（先发布后端集群，再发布前端集群）",
       "groups": [
-        "infra",
         "backend",
         "frontend"
       ]
     },
     {
       "name": "backend-only",
-      "description": "仅更新数据库与后端服务",
+      "description": "仅发布后端微服务集群",
       "groups": [
-        "infra",
         "backend"
       ]
     },
     {
-      "name": "quick-restart",
-      "description": "快速维护：仅执行纯命令任务",
-      "types": [
-        "exec_only"
+      "name": "frontend-only",
+      "description": "仅发布前端集群",
+      "groups": [
+        "frontend"
       ]
     }
   ],
   "services": [
     {
-      "name": "db-",
-      "group": "infra",
-      "type": "sync_only",
-      "stage": 1,
-      "server": {
-        "host": "192.168.1.100",
-        "port": 22,
-        "username": "root",
-        "password": "******",
-        "connectTimeout": 15
-      },
-      "upload": {
-        "localPath": "",
-        "remotePath": ""
-      },
-      "hooks": {
-        "preUploadRemote": [
-          "echo '==\u003e [Remote] Running database migrations...'",
-          "cd /opt/app \u0026\u0026 ./migrate -env=prod || true"
-        ]
-      }
-    },
-    {
-      "name": "api-server-01",
+      "name": "backend-node-01",
       "group": "backend",
       "type": "standard",
       "stage": 1,
@@ -109,38 +67,27 @@
         "connectTimeout": 15
       },
       "upload": {
-        "localPath": "./dist",
-        "remotePath": "/opt/app/api",
-        "exclude": [
-          ".git",
-          "*.log",
-          "node_modules",
-          ".DS_Store"
-        ]
+        "localPath": "D:/projects/my-backend/target/app.jar",
+        "remotePath": "/opt/backend/app.jar"
       },
       "hooks": {
-        "preUploadLocal": [
-          "echo [Local] Building api project..."
-        ],
         "preUploadRemote": [
-          "echo '==\u003e [Remote] Ensuring target dir exists...'",
-          "mkdir -p /opt/app/api"
+          "echo '==\u003e [Backend Node-1] 备份旧版 jar 包（时间后缀）...'",
+          "mkdir -p /opt/backend/backup",
+          "[ -f /opt/backend/app.jar ] \u0026\u0026 cp /opt/backend/app.jar /opt/backend/backup/app_$(date +%Y%m%d_%H%M%S).jar || true"
         ],
         "postUploadRemote": [
-          "echo '==\u003e [Remote] Restarting service...'",
-          "chmod +x /opt/app/api/run.sh 2\u003e/dev/null || true",
-          "systemctl restart my-api 2\u003e/dev/null || echo 'service restart skipped'"
-        ],
-        "postUploadLocal": [
-          "echo [Local] api-server-01 deployment finished successfully."
+          "echo '==\u003e [Backend Node-1] 执行启动脚本...'",
+          "cd /opt/backend \u0026\u0026 chmod +x start.sh \u0026\u0026 sh start.sh"
         ]
-      }
+      },
+      "enabled": true
     },
     {
-      "name": "web-server-02",
-      "group": "frontend",
-      "type": "sync_only",
-      "stage": 3,
+      "name": "backend-node-02",
+      "group": "backend",
+      "type": "standard",
+      "stage": 1,
       "server": {
         "host": "192.168.1.102",
         "port": 22,
@@ -149,27 +96,87 @@
         "connectTimeout": 15
       },
       "upload": {
-        "localPath": "./web-dist",
-        "remotePath": "/var/www/html",
-        "exclude": [
-          ".git",
-          "*.map"
-        ]
+        "localPath": "D:/projects/my-backend/target/app.jar",
+        "remotePath": "/opt/backend/app.jar"
       },
       "hooks": {
-        "preUploadLocal": [
-          "echo [Local] Packing web assets..."
-        ],
         "preUploadRemote": [
-          "mkdir -p /var/www/html"
+          "echo '==\u003e [Backend Node-2] 备份旧版 jar 包（时间后缀）...'",
+          "mkdir -p /opt/backend/backup",
+          "[ -f /opt/backend/app.jar ] \u0026\u0026 cp /opt/backend/app.jar /opt/backend/backup/app_$(date +%Y%m%d_%H%M%S).jar || true"
         ],
         "postUploadRemote": [
-          "nginx -s reload 2\u003e/dev/null || echo 'nginx reload skipped'"
-        ],
-        "postUploadLocal": [
-          "echo [Local] web-server-02 deployment finished successfully."
+          "echo '==\u003e [Backend Node-2] 执行启动脚本...'",
+          "cd /opt/backend \u0026\u0026 chmod +x start.sh \u0026\u0026 sh start.sh"
         ]
-      }
+      },
+      "enabled": true
+    },
+    {
+      "name": "frontend-node-01",
+      "group": "frontend",
+      "type": "standard",
+      "stage": 2,
+      "server": {
+        "host": "192.168.1.201",
+        "port": 22,
+        "username": "root",
+        "password": "your_password_here",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "D:/projects/my-frontend/dist.tar.gz",
+        "remotePath": "/var/www/html/dist.tar.gz"
+      },
+      "hooks": {
+        "preUploadRemote": [
+          "echo '==\u003e [Frontend Node-1] 压缩并备份当前 dist 目录（时间后缀）...'",
+          "mkdir -p /var/www/backup /var/www/html",
+          "[ -d /var/www/html/dist ] \u0026\u0026 tar -czf /var/www/backup/dist_$(date +%Y%m%d_%H%M%S).tar.gz -C /var/www/html dist || true",
+          "rm -rf /var/www/html/dist",
+          "mkdir -p /var/www/html/dist"
+        ],
+        "postUploadRemote": [
+          "echo '==\u003e [Frontend Node-1] 解压新版 dist 压缩包并平滑重载 Nginx...'",
+          "tar -xzf /var/www/html/dist.tar.gz -C /var/www/html/dist",
+          "rm -f /var/www/html/dist.tar.gz",
+          "nginx -s reload || systemctl reload nginx || true"
+        ]
+      },
+      "enabled": true
+    },
+    {
+      "name": "frontend-node-02",
+      "group": "frontend",
+      "type": "standard",
+      "stage": 2,
+      "server": {
+        "host": "192.168.1.202",
+        "port": 22,
+        "username": "root",
+        "password": "your_password_here",
+        "connectTimeout": 15
+      },
+      "upload": {
+        "localPath": "D:/projects/my-frontend/dist.tar.gz",
+        "remotePath": "/var/www/html/dist.tar.gz"
+      },
+      "hooks": {
+        "preUploadRemote": [
+          "echo '==\u003e [Frontend Node-2] 压缩并备份当前 dist 目录（时间后缀）...'",
+          "mkdir -p /var/www/backup /var/www/html",
+          "[ -d /var/www/html/dist ] \u0026\u0026 tar -czf /var/www/backup/dist_$(date +%Y%m%d_%H%M%S).tar.gz -C /var/www/html dist || true",
+          "rm -rf /var/www/html/dist",
+          "mkdir -p /var/www/html/dist"
+        ],
+        "postUploadRemote": [
+          "echo '==\u003e [Frontend Node-2] 解压新版 dist 压缩包并平滑重载 Nginx...'",
+          "tar -xzf /var/www/html/dist.tar.gz -C /var/www/html/dist",
+          "rm -f /var/www/html/dist.tar.gz",
+          "nginx -s reload || systemctl reload nginx || true"
+        ]
+      },
+      "enabled": true
     }
   ]
 }
