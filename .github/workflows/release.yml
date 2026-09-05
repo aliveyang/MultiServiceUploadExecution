@@ -55,7 +55,8 @@ jobs:
       - name: Build Cross-Platform Binaries & Archives
         run: |
           TAG="${{ steps.vars.outputs.TAG }}"
-          mkdir -p dist
+          DIST_DIR="${GITHUB_WORKSPACE:-$PWD}/dist"
+          mkdir -p "${DIST_DIR}"
           
           # 目标平台矩阵: OS:ARCH:EXT
           PLATFORMS=(
@@ -88,21 +89,22 @@ jobs:
             if [ "${GOOS}" = "windows" ]; then
               cp start.bat stop.bat "${BUILD_TMP}/" 2>/dev/null || true
               ARCHIVE="deploy_${TAG}_${GOOS}_${GOARCH}.zip"
-              (cd "${BUILD_TMP}" && zip -q -r "../../dist/${ARCHIVE}" .)
+              (cd "${BUILD_TMP}" && zip -q -r "${DIST_DIR}/${ARCHIVE}" .)
             else
               chmod +x "${BUILD_TMP}/${BIN_NAME}"
               ARCHIVE="deploy_${TAG}_${GOOS}_${GOARCH}.tar.gz"
-              tar -czf "dist/${ARCHIVE}" -C "${BUILD_TMP}" .
+              tar -czf "${DIST_DIR}/${ARCHIVE}" -C "${BUILD_TMP}" .
             fi
             
             rm -rf "${BUILD_TMP}"
-            echo "Packaged: dist/${ARCHIVE}"
+            echo "Packaged: ${DIST_DIR}/${ARCHIVE}"
           done
 
       - name: Generate Checksums
         run: |
           echo "==> Computing SHA256 checksums..."
-          cd dist
+          DIST_DIR="${GITHUB_WORKSPACE:-$PWD}/dist"
+          cd "${DIST_DIR}"
           rm -f checksums.txt
           sha256sum deploy_* > checksums.txt
           cat checksums.txt
