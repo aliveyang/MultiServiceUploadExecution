@@ -575,30 +575,6 @@
   // 危险路径黑名单
   const DANGEROUS_PATHS = ['/', '/*', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib64', '/opt', '/proc', '/root', '/sbin', '/sys', '/usr', '/var'];
 
-  /* ===== 预备的常用路径模版库 ===== */
-  const PATH_PRESETS = {
-    local: [
-      { cat: '前端工程', name: 'Vue / React / Vite 标准构建目录', path: './dist', desc: '静态打包输出目录，适合直接部署到 Nginx 或静态托管目录' },
-      { cat: '前端工程', name: 'Next.js / Nuxt 构建输出', path: './out', desc: '前端静态导出或 SSG 产物目录' },
-      { cat: '前端工程', name: '通用前端 Build 输出', path: './build', desc: 'Create-React-App 等构建产物目录' },
-      { cat: 'Go / 二进制', name: 'Go 编译目标产物目录', path: './bin', desc: '包含编译完成的跨平台绿色可执行文件' },
-      { cat: 'Go / 二进制', name: '带服务名的单二进制文件', path: './bin/{name}', desc: '精准上传单个二进制可执行程序' },
-      { cat: 'Java / JVM', name: 'Maven 构建输出 Target 目录', path: './target', desc: '包含已生成的可执行 Fat Jar 包' },
-      { cat: 'Java / JVM', name: 'Gradle 构建输出 Libs 目录', path: './build/libs', desc: '包含已打包好的 .jar 或 .war 发布产物' },
-      { cat: 'Python / 源码', name: 'Python 项目源码目录', path: './src', desc: 'Python/Django/FastAPI 应用核心源码' },
-      { cat: '静态资源', name: 'Public 静态公共资产', path: './public', desc: '网站图片、图标与纯静态页面' },
-      { cat: '根目录', name: '当前工作目录根路径', path: '.', desc: '直接传输当前项目完整目录' }
-    ],
-    remote: [
-      { cat: '标准微服务', name: '企业标准应用目录 (/opt/app)', path: '/opt/app/{name}', desc: '推荐的企业级独立部署规范目录，结构清晰独立' },
-      { cat: 'Web 站点', name: 'Nginx / Apache 默认 Web 站点', path: '/var/www/{name}', desc: '面向公网访问的 HTML/前端前端静态资源目录' },
-      { cat: 'Web 站点', name: '数据分区 Web 目录 (/data/www)', path: '/data/www/{name}', desc: '挂载大容量数据盘的 Web 站群标准路径' },
-      { cat: '系统服务', name: 'Linux 本地通用服务目录', path: '/usr/local/services/{name}', desc: '适合安装为系统级守护进程的服务组件' },
-      { cat: '容器部署', name: 'Docker Compose 宿主机挂载点', path: '/data/docker/{name}', desc: '映射进容器内的数据卷或挂载源目录' },
-      { cat: '数据目录', name: '独立应用部署目录 (/data/app)', path: '/data/app/{name}', desc: '独立数据分区下的服务部署主路径' }
-    ]
-  };
-
   /* ===== 预备的常用生命周期命令库 ===== */
   const COMMAND_PRESETS = {
     preUploadLocal: [
@@ -1168,31 +1144,29 @@
           <div class="field">
             <label>
               <span class="t">本地源路径 (localPath) <b>*</b></span>
-              <div style="display:flex;gap:4px">
+              <div style="display:flex;gap:6px">
                 <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的文件夹选择对话框" onclick="pickNativePath('folder')">📁 选本地目录</button>
                 <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的单文件选择对话框" onclick="pickNativePath('file')">📄 选本地文件</button>
-                <button class="btn sm-btn" title="从常见相对路径模版挑选" onclick="openPathPicker('local')">✨ 预设</button>
               </div>
             </label>
             <div class="input-action-group">
-              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="可直接手工打字输入，或点击上方「选本地目录/文件」" oninput="updUpload('localPath', this.value)">
+              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="直接键盘输入或粘贴路径，亦可点击上方选目录/文件" oninput="updUpload('localPath', this.value)">
             </div>
-            <div class="hint">支持直接键盘打字/复制粘贴绝对路径或相对路径，点击按钮可直接打开原生系统选择框</div>
+            <div class="hint">支持直接键盘打字输入绝对/相对路径，点击上方按钮可直接唤起原生 Windows 选择对话框</div>
           </div>
 
           <div class="field">
             <label>
               <span class="t">远端目标路径 (remotePath) <b>*</b></span>
-              <button class="btn sm-btn picker-btn" onclick="openPathPicker('remote')">📂 弹窗选择规范路径</button>
             </label>
             <div class="input-action-group">
-              <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}" placeholder="可直接手输，例: /opt/app/my-app"
+              <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}" placeholder="直接键盘输入远端目录，例如: /opt/app/my-app"
                      oninput="updUpload('remotePath', this.value);checkDangerousPath(this.value)">
             </div>
             <div class="danger-alert" id="danger-path-alert">
               ⚠️ 警告：检测到该路径属于关键系统目录，在启用「清空目录」时将被严密拦截阻断！
             </div>
-            <div class="hint">远端父级目录不存在时将自动创建，支持输入框直接编辑</div>
+            <div class="hint">远端 Linux 存放目标绝对路径，父级目录不存在时将自动创建</div>
           </div>
 
           <div class="field">
@@ -1305,7 +1279,7 @@
     }
   }
 
-  /* ===== 交互式选择弹窗逻辑 (Picker Dialog) ===== */
+  /* ===== 交互式命令选择弹窗逻辑 (Command Picker Dialog) ===== */
   function onPickerBackdropClick(e) {
     if (e.target.id === 'picker-modal') {
       closePicker();
@@ -1316,27 +1290,7 @@
     document.getElementById('picker-modal').classList.remove('show');
   }
 
-  // 1. 呼出路径选择弹窗
-  function openPathPicker(targetField) {
-    pickerState.type = 'path';
-    pickerState.targetField = targetField;
-    pickerState.activeCategory = '全部';
-    pickerState.searchKeyword = '';
-    pickerState.selectedValues = [];
-
-    const titleEl = document.getElementById('pd-title');
-    const isLocal = targetField === 'local';
-    titleEl.innerHTML = `<span>📂</span> 选择${isLocal ? '本地源路径预设' : '远端目标路径规范模版'}`;
-    document.getElementById('pd-search').value = '';
-    document.getElementById('pd-foot-tip').textContent = '点击任意选项可直接填入，输入框仍完全保留手输能力';
-    document.getElementById('pd-btn-confirm').textContent = '填入所选路径';
-
-    renderPickerCategories();
-    renderPickerList();
-    document.getElementById('picker-modal').classList.add('show');
-  }
-
-  // 2. 呼出命令选择弹窗
+  // 呼出生命周期常用预备命令选择弹窗
   function openCommandPicker(stageKey, contextVal = null) {
     pickerState.type = 'cmd';
     pickerState.targetField = stageKey;
@@ -1359,7 +1313,7 @@
     const titleEl = document.getElementById('pd-title');
     titleEl.innerHTML = `<span>⚡</span> 选取常用预备命令 <span style="font-size:12px;color:var(--accent)">(${stageNames[stageKey] || stageKey})</span>`;
     document.getElementById('pd-search').value = '';
-    document.getElementById('pd-foot-tip').textContent = '支持勾选多条命令一键追加到文本框中，原文本框内容保留';
+    document.getElementById('pd-foot-tip').textContent = '点击可单选/多选命令一键追加到当前文本框中，原手输内容完整保留';
     document.getElementById('pd-btn-confirm').textContent = '追加选定命令';
 
     renderPickerCategories();
@@ -1368,9 +1322,6 @@
   }
 
   function getRawPickerItems() {
-    if (pickerState.type === 'path') {
-      return PATH_PRESETS[pickerState.targetField] || [];
-    }
     return COMMAND_PRESETS[pickerState.targetField] || [];
   }
 
@@ -1421,20 +1372,19 @@
     const filtered = rawItems.filter(item => {
       if (pickerState.activeCategory !== '全部' && item.cat !== pickerState.activeCategory) return false;
       if (pickerState.searchKeyword) {
-        const text = `${item.name} ${item.cat} ${item.desc || ''} ${item.path || ''} ${item.cmd || ''}`.toLowerCase();
+        const text = `${item.name} ${item.cat} ${item.desc || ''} ${item.cmd || ''}`.toLowerCase();
         if (!text.includes(pickerState.searchKeyword)) return false;
       }
       return true;
     });
 
     if (filtered.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;padding:36px;color:var(--faint);font-size:12.5px">未找到匹配的预设选项</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:36px;color:var(--faint);font-size:12.5px">未找到匹配的命令选项</div>';
       return;
     }
 
     filtered.forEach((item, idx) => {
-      const isPath = pickerState.type === 'path';
-      const rawCode = isPath ? item.path : item.cmd;
+      const rawCode = item.cmd;
       const computedCode = rawCode
         .replace(/{name}/g, currentSvcName)
         .replace(/{remotePath}/g, currentRPath)
@@ -1445,24 +1395,17 @@
       const card = document.createElement('div');
       card.className = 'pd-item' + (isSelected ? ' selected' : '');
       card.onclick = () => {
-        if (isPath) {
-          // 路径单选：选中并直接确认填入
-          pickerState.selectedValues = [computedCode];
-          confirmPicker();
+        const existsIdx = pickerState.selectedValues.indexOf(computedCode);
+        if (existsIdx >= 0) {
+          pickerState.selectedValues.splice(existsIdx, 1);
         } else {
-          // 命令多选/单选
-          const existsIdx = pickerState.selectedValues.indexOf(computedCode);
-          if (existsIdx >= 0) {
-            pickerState.selectedValues.splice(existsIdx, 1);
-          } else {
-            pickerState.selectedValues.push(computedCode);
-          }
-          renderPickerList();
+          pickerState.selectedValues.push(computedCode);
         }
+        renderPickerList();
       };
 
       card.innerHTML = `
-        <input type="${isPath ? 'radio' : 'checkbox'}" class="pd-item-check" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();this.parentNode.click()">
+        <input type="checkbox" class="pd-item-check" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();this.parentNode.click()">
         <div class="pd-item-main">
           <div class="pd-item-title">
             <span>${escapeHtml(item.name)}</span>
@@ -1478,65 +1421,42 @@
 
   function confirmPicker() {
     if (pickerState.selectedValues.length === 0) {
-      showToast('请先点击选择至少一个选项', 'error');
+      showToast('请先点击勾选至少一条命令', 'error');
       return;
     }
 
-    if (pickerState.type === 'path') {
-      const pathVal = pickerState.selectedValues[0];
-      const s = deployConfig.services[currentIndex];
-      if (!s.upload) s.upload = {};
+    const cmds = pickerState.selectedValues;
+    const stage = pickerState.targetField;
 
-      if (pickerState.targetField === 'local') {
-        s.upload.localPath = pathVal;
-        const inp = document.getElementById('input-localPath');
-        if (inp) inp.value = pathVal;
-        showToast('已填入本地路径: ' + pathVal);
-      } else {
-        s.upload.remotePath = pathVal;
-        const inp = document.getElementById('input-remotePath');
-        if (inp) inp.value = pathVal;
-        checkDangerousPath(pathVal);
-        showToast('已填入远端路径: ' + pathVal);
-      }
-      notifyChange();
-      closePicker();
+    if (stage === 'globPre' || stage === 'globPost') {
+      const field = stage === 'globPre' ? 'preDeploy' : 'postDeploy';
+      if (!deployConfig.hooks) deployConfig.hooks = {};
+      if (!Array.isArray(deployConfig.hooks[field])) deployConfig.hooks[field] = [];
+      deployConfig.hooks[field].push(...cmds);
+      const ta = document.getElementById('glob-' + field);
+      if (ta) ta.value = deployConfig.hooks[field].join('\n');
+    } else if (stage === 'groupPre' || stage === 'groupPost') {
+      const field = stage === 'groupPre' ? 'preDeploy' : 'postDeploy';
+      const groupName = pickerState.targetContext;
+      let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === (groupName || '').toLowerCase());
+      if (!grp) { grp = { name: groupName, hooks: {} }; deployConfig.groups.push(grp); }
+      if (!grp.hooks) grp.hooks = {};
+      if (!Array.isArray(grp.hooks[field])) grp.hooks[field] = [];
+      grp.hooks[field].push(...cmds);
+      const ta = document.getElementById('gh-' + field);
+      if (ta) ta.value = grp.hooks[field].join('\n');
     } else {
-      // 命令追加
-      const cmds = pickerState.selectedValues;
-      const stage = pickerState.targetField;
-
-      if (stage === 'globPre' || stage === 'globPost') {
-        const field = stage === 'globPre' ? 'preDeploy' : 'postDeploy';
-        if (!deployConfig.hooks) deployConfig.hooks = {};
-        if (!Array.isArray(deployConfig.hooks[field])) deployConfig.hooks[field] = [];
-        deployConfig.hooks[field].push(...cmds);
-        const ta = document.getElementById('glob-' + field);
-        if (ta) ta.value = deployConfig.hooks[field].join('\n');
-      } else if (stage === 'groupPre' || stage === 'groupPost') {
-        const field = stage === 'groupPre' ? 'preDeploy' : 'postDeploy';
-        const groupName = pickerState.targetContext;
-        let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === (groupName || '').toLowerCase());
-        if (!grp) { grp = { name: groupName, hooks: {} }; deployConfig.groups.push(grp); }
-        if (!grp.hooks) grp.hooks = {};
-        if (!Array.isArray(grp.hooks[field])) grp.hooks[field] = [];
-        grp.hooks[field].push(...cmds);
-        const ta = document.getElementById('gh-' + field);
-        if (ta) ta.value = grp.hooks[field].join('\n');
-      } else {
-        // 服务专属钩子
-        const s = deployConfig.services[currentIndex];
-        if (!s.hooks) s.hooks = {};
-        if (!Array.isArray(s.hooks[stage])) s.hooks[stage] = [];
-        s.hooks[stage].push(...cmds);
-        const ta = document.getElementById('hook-' + stage);
-        if (ta) ta.value = s.hooks[stage].join('\n');
-      }
-
-      notifyChange();
-      closePicker();
-      showToast(`已追加 ${cmds.length} 条命令到文本框`);
+      const s = deployConfig.services[currentIndex];
+      if (!s.hooks) s.hooks = {};
+      if (!Array.isArray(s.hooks[stage])) s.hooks[stage] = [];
+      s.hooks[stage].push(...cmds);
+      const ta = document.getElementById('hook-' + stage);
+      if (ta) ta.value = s.hooks[stage].join('\n');
     }
+
+    notifyChange();
+    closePicker();
+    showToast(`已追加 ${cmds.length} 条命令到文本框`);
   }
 
   function addExcludeRule(rule) {
