@@ -401,8 +401,20 @@ func TestHandleTestConnect(t *testing.T) {
 	if res["status"] != "error" {
 		t.Errorf("expected status 'error' for unreachable port, got %v", res["status"])
 	}
-	if res["error"] == nil || res["error"] == "" {
-		t.Errorf("expected non-empty error message, got nil")
+		if res["error"] == nil || res["error"] == "" {
+			t.Errorf("expected non-empty error message, got nil")
+		}
+	}
+
+func TestHandlePickPathMethodGuard(t *testing.T) {
+	srv := NewServer(":0", "deploy.json")
+
+	// 测试非法 HTTP 方法拦截（如 PUT/DELETE）
+	reqPut := httptest.NewRequest(http.MethodPut, "/api/system/pick-path", nil)
+	wPut := httptest.NewRecorder()
+	srv.handlePickPath(wPut, reqPut)
+	if wPut.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 MethodNotAllowed, got %d", wPut.Code)
 	}
 }
 

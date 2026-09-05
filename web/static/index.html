@@ -1162,18 +1162,22 @@
         </div>
       </div>
 
-      <!-- Tab 2: 文件传输 (支持直接填写 + 弹出选择框选择) -->
+      <!-- Tab 2: 文件传输 (支持直接手输 + 唤起 Windows 原生系统文件/目录选择框) -->
       <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}">
         <div class="grid g2">
           <div class="field">
             <label>
               <span class="t">本地源路径 (localPath) <b>*</b></span>
-              <button class="btn sm-btn picker-btn" onclick="openPathPicker('local')">📂 弹窗选择预设</button>
+              <div style="display:flex;gap:4px">
+                <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的文件夹选择对话框" onclick="pickNativePath('folder')">📁 选本地目录</button>
+                <button class="btn sm-btn picker-btn" title="唤起 Windows 系统的单文件选择对话框" onclick="pickNativePath('file')">📄 选本地文件</button>
+                <button class="btn sm-btn" title="从常见相对路径模版挑选" onclick="openPathPicker('local')">✨ 预设</button>
+              </div>
             </label>
             <div class="input-action-group">
-              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="可直接手输，例: ./dist 或 ./bin" oninput="updUpload('localPath', this.value)">
+              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="可直接手工打字输入，或点击上方「选本地目录/文件」" oninput="updUpload('localPath', this.value)">
             </div>
-            <div class="hint">支持在输入框内直接输入任意自定义路径，或点击右上角弹窗快速挑选</div>
+            <div class="hint">支持直接键盘打字/复制粘贴绝对路径或相对路径，点击按钮可直接打开原生系统选择框</div>
           </div>
 
           <div class="field">
@@ -1273,6 +1277,33 @@
   }
 
   function switchTab(t) { activeTab = t; renderEditorInner(); }
+
+  /* ===== 唤起操作系统原生文件/目录选择框 ===== */
+  async function pickNativePath(mode = 'folder') {
+    showToast(mode === 'file' ? '正在唤起 Windows 文件选择框...' : '正在唤起 Windows 文件夹选择框...');
+    try {
+      const resp = await fetch(`/api/system/pick-path?mode=${mode}`);
+      if (!resp.ok) {
+        throw new Error(await resp.text());
+      }
+      const data = await resp.json();
+      if (data.status === 'ok' && data.path) {
+        const s = deployConfig.services[currentIndex];
+        if (!s.upload) s.upload = {};
+        s.upload.localPath = data.path;
+        const inp = document.getElementById('input-localPath');
+        if (inp) inp.value = data.path;
+        notifyChange();
+        showToast('✅ 已选定本地路径: ' + data.path);
+      } else if (data.status === 'canceled') {
+        showToast('已取消选择');
+      } else if (data.error) {
+        showToast('打开选择框失败: ' + data.error, 'error');
+      }
+    } catch (err) {
+      showToast('调用系统对话框失败: ' + err.message, 'error');
+    }
+  }
 
   /* ===== 交互式选择弹窗逻辑 (Picker Dialog) ===== */
   function onPickerBackdropClick(e) {
