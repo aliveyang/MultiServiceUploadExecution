@@ -91,6 +91,9 @@
     .btn.primary:hover { background: var(--accent-hover); }
     .btn.danger-ghost { color: var(--red); }
     .btn.danger-ghost:hover { border-color: rgba(220, 38, 38, 0.35); background: var(--red-soft); }
+    .btn.sm-btn { padding: 3px 8px; font-size: 11.5px; border-radius: 5px; }
+    .btn.picker-btn { background: var(--panel); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .btn.picker-btn:hover { background: var(--accent-soft); }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
 
     /* ===== 主体：侧边栏 + 编辑区 ===== */
@@ -224,7 +227,8 @@
     @media (max-width: 960px) { .g3 { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 680px) { .g2, .g3 { grid-template-columns: 1fr; } }
 
-    .field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    .field label { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    .field label span.t { display: inline-flex; align-items: center; gap: 3px; }
     .field label b { color: var(--accent); font-weight: normal; }
     .field input, .field textarea, .hook-card textarea {
       width: 100%;
@@ -243,16 +247,8 @@
     }
     .field .hint { font-size: 10.5px; color: var(--faint); margin-top: 4px; }
 
-    /* 快捷生成标签池 (Chips) */
-    .chip-pool { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-    .chip-btn {
-      display: inline-flex; align-items: center; gap: 3px;
-      font-size: 11px; padding: 2px 7px; border-radius: 5px;
-      background: var(--panel-2); border: 1px solid var(--border);
-      color: var(--muted); cursor: pointer; user-select: none; transition: .15s;
-    }
-    .chip-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-    .chip-btn.danger:hover { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+    .input-action-group { display: flex; gap: 6px; align-items: stretch; }
+    .input-action-group input { flex: 1; }
 
     /* 危险路径告警 */
     .danger-alert {
@@ -285,17 +281,18 @@
       border-radius: 10px; padding: 12px 14px 14px;
       box-shadow: var(--shadow);
     }
-    .hook-card .hc-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+    .hook-card .hc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+    .hook-card .hc-left { display: flex; align-items: center; gap: 6px; }
     .hook-card .step {
       width: 18px; height: 18px; border-radius: 6px; font-size: 10.5px; font-weight: 600;
       display: grid; place-items: center; color: #fff; flex: 0 0 auto;
     }
-    .hook-card .where { margin-left: auto; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+    .hook-card .where { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
     .where.local { background: rgba(37, 99, 235, 0.09); color: var(--accent); }
     .where.remote { background: rgba(22, 163, 74, 0.1); color: var(--green); }
     .hook-card textarea {
       width: 100%;
-      min-height: 130px; background: var(--panel-2);
+      min-height: 125px; background: var(--panel-2);
       font-family: "Cascadia Code", Consolas, monospace;
       font-size: 12px; line-height: 1.6;
       resize: vertical;
@@ -315,14 +312,80 @@
     .empty .icon { font-size: 40px; margin-bottom: 12px; opacity: .8; }
     .empty p { margin-bottom: 16px; font-size: 13.5px; line-height: 1.8; }
 
-    /* ===== 部署终端弹窗 ===== */
+    /* ===== 通用交互选择模态框 (Picker Modal) ===== */
     .modal-backdrop {
       position: fixed; inset: 0; z-index: 100;
-      background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(3px);
-      display: none; place-items: center; padding: 24px;
+      background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px);
+      display: none; place-items: center; padding: 20px;
     }
     .modal-backdrop.show { display: grid; }
-    .modal {
+    
+    .picker-dialog {
+      width: min(720px, 95vw); max-height: min(620px, 88vh);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; display: flex; flex-direction: column;
+      box-shadow: var(--shadow-lg); overflow: hidden; animation: zoomIn .15s ease-out;
+    }
+    @keyframes zoomIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+
+    .pd-head {
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+    }
+    .pd-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--text); }
+    .pd-close {
+      width: 26px; height: 26px; border-radius: 6px; border: none;
+      background: transparent; color: var(--muted); font-size: 16px;
+      display: grid; place-items: center; cursor: pointer; transition: .15s;
+    }
+    .pd-close:hover { background: #e2e8f0; color: var(--text); }
+
+    .pd-toolbar {
+      padding: 10px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; background: #fff;
+    }
+    .pd-search {
+      flex: 1; border: 1px solid var(--border-strong); border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; outline: none; background: var(--panel-2);
+    }
+    .pd-search:focus { border-color: var(--accent); background: #fff; }
+    .pd-cats { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0; }
+    .pd-cat-btn {
+      padding: 4px 10px; border-radius: 5px; border: 1px solid transparent;
+      font-size: 11.5px; background: var(--panel-2); color: var(--muted); cursor: pointer; white-space: nowrap; transition: .15s;
+    }
+    .pd-cat-btn:hover { color: var(--text); border-color: var(--border-strong); }
+    .pd-cat-btn.active { background: var(--accent); color: #fff; font-weight: 600; border-color: var(--accent); }
+
+    .pd-body { flex: 1; overflow-y: auto; padding: 12px 18px; min-height: 240px; }
+    .pd-list { display: flex; flex-direction: column; gap: 8px; }
+    .pd-item {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: 8px; background: #fff;
+      cursor: pointer; transition: .15s; user-select: none;
+    }
+    .pd-item:hover { border-color: var(--accent); background: #f8faff; box-shadow: 0 2px 6px rgba(37,99,235,0.06); }
+    .pd-item.selected { border-color: var(--accent); background: #eff6ff; }
+    .pd-item-check { margin-top: 3px; }
+    .pd-item-main { flex: 1; min-width: 0; }
+    .pd-item-title { font-weight: 600; font-size: 12.5px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .pd-item-cat { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #eef2f7; color: var(--muted); }
+    .pd-item-desc { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .pd-item-code {
+      margin-top: 6px; background: #1e293b; color: #93c5fd; padding: 6px 10px;
+      border-radius: 6px; font-family: "Cascadia Code", Consolas, monospace; font-size: 11.5px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    .pd-foot {
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 18px; border-top: 1px solid var(--border); background: var(--panel-2);
+    }
+    .pd-foot-left { font-size: 11.5px; color: var(--muted); }
+    .pd-foot-btns { display: flex; gap: 8px; }
+
+    /* ===== 部署终端弹窗 ===== */
+    .terminal-modal {
       width: min(920px, 100%); height: min(640px, 90vh);
       background: #0f172a; border: 1px solid #1e293b;
       border-radius: 12px; display: flex; flex-direction: column;
@@ -362,8 +425,8 @@
     .scroll-bottom-btn.show { display: flex; }
 
     .modal-foot { flex: 0 0 auto; padding: 7px 14px; border-top: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .modal .btn { background: #1e293b; border-color: #334155; color: #cbd5e1; box-shadow: none; font-size: 11.5px; padding: 4px 9px; }
-    .modal .btn:hover { background: #334155; }
+    .modal-foot .btn { background: #1e293b; border-color: #334155; color: #cbd5e1; box-shadow: none; font-size: 11.5px; padding: 4px 9px; }
+    .modal-foot .btn:hover { background: #334155; }
 
     /* 终端 ANSI 颜色 */
     .a-red { color: #f87171; }
@@ -449,23 +512,47 @@
 
   <!-- 部署实时终端 -->
   <div class="modal-backdrop" id="deploy-modal">
-    <div class="modal">
+    <div class="terminal-modal">
       <div class="modal-head">
         <div class="t"><span class="live-dot" id="live-dot"></span>部署实时终端</div>
         <span class="badge" id="deploy-badge">就绪</span>
         <div class="spacer"></div>
         <input class="term-filter" id="term-filter" placeholder="🔍 过滤日志..." oninput="filterLogs(this.value)">
-        <button class="btn danger-ghost" id="cancel-deploy-btn" style="color:#f87171" onclick="cancelDeploy()">中止部署</button>
-        <button class="btn" title="复制纯文本日志到剪贴板" onclick="copyTerminalText()">📋 复制</button>
-        <button class="btn" title="导出日志为本地 .log 文件" onclick="exportTerminalLog()">💾 导出</button>
-        <button class="btn" onclick="clearTerminal()">清屏</button>
-        <button class="btn" onclick="closeTerminal()">关闭</button>
+        <button class="btn danger-ghost sm-btn" id="cancel-deploy-btn" style="color:#f87171" onclick="cancelDeploy()">中止部署</button>
+        <button class="btn sm-btn" title="复制纯文本日志到剪贴板" onclick="copyTerminalText()">📋 复制</button>
+        <button class="btn sm-btn" title="导出日志为本地 .log 文件" onclick="exportTerminalLog()">💾 导出</button>
+        <button class="btn sm-btn" onclick="clearTerminal()">清屏</button>
+        <button class="btn sm-btn" onclick="closeTerminal()">关闭</button>
       </div>
       <div class="terminal" id="terminal-output"></div>
       <div class="scroll-bottom-btn" id="scroll-bottom-btn" onclick="scrollToBottom()">⬇ 滚回底部 (吸底已暂停)</div>
       <div class="modal-foot">
         <span class="a-dim" style="font-size:11px">SSE 实时流 · 支持彩色前缀 · 支持快捷键 Esc 关闭</span>
         <span class="a-dim" id="term-stats" style="font-size:11px">就绪</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交互式选择器弹窗 (Picker Modal) -->
+  <div class="modal-backdrop" id="picker-modal" onclick="onPickerBackdropClick(event)">
+    <div class="picker-dialog" id="picker-dialog">
+      <div class="pd-head">
+        <div class="pd-title" id="pd-title"><span>📂</span> 交互式选择</div>
+        <button class="pd-close" onclick="closePicker()">✕</button>
+      </div>
+      <div class="pd-toolbar">
+        <input class="pd-search" id="pd-search" placeholder="🔍 输入关键词实时过滤..." oninput="onPickerSearch(this.value)">
+        <div class="pd-cats" id="pd-cats"></div>
+      </div>
+      <div class="pd-body">
+        <div class="pd-list" id="pd-list"></div>
+      </div>
+      <div class="pd-foot">
+        <div class="pd-foot-left" id="pd-foot-tip">点击列表项可快速选定，亦支持在原位直接手输</div>
+        <div class="pd-foot-btns">
+          <button class="btn sm-btn" onclick="closePicker()">取消</button>
+          <button class="btn sm-btn primary" id="pd-btn-confirm" onclick="confirmPicker()">确认选定</button>
+        </div>
       </div>
     </div>
   </div>
@@ -488,6 +575,94 @@
   // 危险路径黑名单
   const DANGEROUS_PATHS = ['/', '/*', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib64', '/opt', '/proc', '/root', '/sbin', '/sys', '/usr', '/var'];
 
+  /* ===== 预备的常用路径模版库 ===== */
+  const PATH_PRESETS = {
+    local: [
+      { cat: '前端工程', name: 'Vue / React / Vite 标准构建目录', path: './dist', desc: '静态打包输出目录，适合直接部署到 Nginx 或静态托管目录' },
+      { cat: '前端工程', name: 'Next.js / Nuxt 构建输出', path: './out', desc: '前端静态导出或 SSG 产物目录' },
+      { cat: '前端工程', name: '通用前端 Build 输出', path: './build', desc: 'Create-React-App 等构建产物目录' },
+      { cat: 'Go / 二进制', name: 'Go 编译目标产物目录', path: './bin', desc: '包含编译完成的跨平台绿色可执行文件' },
+      { cat: 'Go / 二进制', name: '带服务名的单二进制文件', path: './bin/{name}', desc: '精准上传单个二进制可执行程序' },
+      { cat: 'Java / JVM', name: 'Maven 构建输出 Target 目录', path: './target', desc: '包含已生成的可执行 Fat Jar 包' },
+      { cat: 'Java / JVM', name: 'Gradle 构建输出 Libs 目录', path: './build/libs', desc: '包含已打包好的 .jar 或 .war 发布产物' },
+      { cat: 'Python / 源码', name: 'Python 项目源码目录', path: './src', desc: 'Python/Django/FastAPI 应用核心源码' },
+      { cat: '静态资源', name: 'Public 静态公共资产', path: './public', desc: '网站图片、图标与纯静态页面' },
+      { cat: '根目录', name: '当前工作目录根路径', path: '.', desc: '直接传输当前项目完整目录' }
+    ],
+    remote: [
+      { cat: '标准微服务', name: '企业标准应用目录 (/opt/app)', path: '/opt/app/{name}', desc: '推荐的企业级独立部署规范目录，结构清晰独立' },
+      { cat: 'Web 站点', name: 'Nginx / Apache 默认 Web 站点', path: '/var/www/{name}', desc: '面向公网访问的 HTML/前端前端静态资源目录' },
+      { cat: 'Web 站点', name: '数据分区 Web 目录 (/data/www)', path: '/data/www/{name}', desc: '挂载大容量数据盘的 Web 站群标准路径' },
+      { cat: '系统服务', name: 'Linux 本地通用服务目录', path: '/usr/local/services/{name}', desc: '适合安装为系统级守护进程的服务组件' },
+      { cat: '容器部署', name: 'Docker Compose 宿主机挂载点', path: '/data/docker/{name}', desc: '映射进容器内的数据卷或挂载源目录' },
+      { cat: '数据目录', name: '独立应用部署目录 (/data/app)', path: '/data/app/{name}', desc: '独立数据分区下的服务部署主路径' }
+    ]
+  };
+
+  /* ===== 预备的常用生命周期命令库 ===== */
+  const COMMAND_PRESETS = {
+    preUploadLocal: [
+      { cat: '前端打包', name: 'npm 生产构建', cmd: 'npm run build', desc: '在本地运行前端生产环境打包' },
+      { cat: '前端打包', name: 'pnpm 生产构建', cmd: 'pnpm build', desc: '使用高效 pnpm 构建前端产物' },
+      { cat: '前端打包', name: 'yarn 构建并导出', cmd: 'yarn build && yarn export', desc: 'Yarn 构建并生成静态站点' },
+      { cat: 'Go 后端', name: 'Go 静态轻量编译', cmd: 'go build -ldflags="-s -w" -o bin/{name} .', desc: '静态编译为单文件并剔除调试符号瘦身' },
+      { cat: 'Java / JVM', name: 'Maven 跳过测试打包', cmd: 'mvn clean package -DskipTests', desc: '快速打出 Jar 包并跳过耗时单元测试' },
+      { cat: 'Java / JVM', name: 'Gradle 生产打包', cmd: './gradlew build -x test', desc: 'Gradle 编译打包并忽略单测' },
+      { cat: '容器镜像', name: 'Docker 镜像本地构建', cmd: 'docker build -t {name}:latest .', desc: '基于当前目录 Dockerfile 构建镜像' },
+      { cat: '代码同步', name: 'Git 主干变基拉取', cmd: 'git pull --rebase origin main', desc: '构建前拉取最新远程主干代码' }
+    ],
+    preUploadRemote: [
+      { cat: '环境准备', name: '确保远端目标目录存在', cmd: 'mkdir -p {remotePath}', desc: '防止上传时因父级目录缺失报错' },
+      { cat: '数据备份', name: '部署前备份旧版本产物', cmd: 'mkdir -p {remotePath}/backup && cp -r {remotePath}/* {remotePath}/backup/ 2>/dev/null || true', desc: '备份上一版生产代码供故障快速回滚' },
+      { cat: '服务停机', name: '停止 Systemd 系统服务', cmd: 'systemctl stop {name} || true', desc: '解除文件占用，准备替换新程序' },
+      { cat: '服务停机', name: '停止 PM2 Node 应用', cmd: 'pm2 stop {name} || true', desc: '停止 PM2 管理的前端/Node 服务' },
+      { cat: '服务停机', name: '停止 Docker Compose 容器', cmd: 'cd {remotePath} && docker compose down || true', desc: '停掉旧版运行中的容器组' }
+    ],
+    postUploadRemote: [
+      { cat: 'Systemd 重启', name: '重载并重启 Systemd 服务', cmd: 'systemctl daemon-reload && systemctl restart {name}', desc: '重新加载守护进程并启动新服务' },
+      { cat: '后台守护', name: 'nohup 后台启动独立进程', cmd: 'chmod +x {remotePath}/{name} && nohup {remotePath}/{name} > {remotePath}/app.log 2>&1 &', desc: '添加可执行权限并在后台持久运行' },
+      { cat: '容器编排', name: '重新构建并启动 Compose 容器', cmd: 'cd {remotePath} && docker compose up -d --build', desc: '后台构建最新容器并无缝启动' },
+      { cat: 'Node / PM2', name: 'PM2 优雅重载', cmd: 'cd {remotePath} && pm2 reload {name} || pm2 start ecosystem.config.js', desc: '零停机平滑重载现有 Node/前端服务' },
+      { cat: '健康检查', name: 'HTTP 健康探测 (失败即阻断)', cmd: 'sleep 2 && curl -sf http://127.0.0.1:8080/health || exit 1', desc: '部署完毕后自测接口，异常则抛出错误' },
+      { cat: '日志检查', name: '打印最新 30 行日志', cmd: 'sleep 1 && tail -n 30 {remotePath}/app.log 2>/dev/null || journalctl -u {name} -n 30', desc: '在部署终端即时回显启动日志' }
+    ],
+    postUploadLocal: [
+      { cat: '通知回显', name: '本地成功回显提示', cmd: 'echo \'✅ 服务 {name} 已完成上传与部署\'', desc: '在控制台输出完成提示' },
+      { cat: '远程探测', name: '从本地探测远程主机接口', cmd: 'curl -sf http://{host}:8080/health', desc: '检验公网/局域网端口与健康路由' },
+      { cat: '钉钉通知', name: '发送钉钉群上线通知', cmd: 'curl -s -X POST \'https://oapi.dingtalk.com/robot/send?access_token=...\' -H \'Content-Type: application/json\' -d \'{"msgtype":"text","text":{"content":"🚀 {name} 部署上线成功"}}\'', desc: '触发 Webhook 告知团队' },
+      { cat: '飞书通知', name: '发送飞书群上线通知', cmd: 'curl -s -X POST \'https://open.feishu.cn/open-apis/bot/v2/hook/...\' -H \'Content-Type: application/json\' -d \'{"msg_type":"text","content":{"text":"🚀 {name} 部署成功"}}\'', desc: '推送消息到飞书群机器人' }
+    ],
+    groupPre: [
+      { cat: '分组构建', name: 'npm 组包编译', cmd: 'npm run build', desc: '调度该组服务器前在本地打包' },
+      { cat: '分组构建', name: 'pnpm 组包编译', cmd: 'pnpm build', desc: '组前置高效编译打包' },
+      { cat: '分组构建', name: 'Go 编译指定组产物', cmd: 'go build -o bin/{name} ./cmd/{name}', desc: '仅编译该分组对应的后端二进制' },
+      { cat: '代码拉取', name: '最新代码同步', cmd: 'git pull --rebase', desc: '确保该组按最新代码执行' }
+    ],
+    groupPost: [
+      { cat: '组健康检查', name: '该组全节点部署完成确认', cmd: 'echo \'✅ {name} 组全部节点均返回 SUCCESS\'', desc: '分组批次圆满结束通知' },
+      { cat: '烟雾测试', name: '触发自动化冒烟回归', cmd: 'curl -sf http://127.0.0.1:8080/smoke-test || exit 1', desc: '全组就绪后触发集中测试' }
+    ],
+    globPre: [
+      { cat: '全局启动', name: '全局批次启动提示', cmd: 'echo \'==> 全局并发部署流水线启动...\'', desc: '本地首步日志打印' },
+      { cat: '代码同步', name: '全工程 Git 代码拉取', cmd: 'git pull --rebase', desc: '保障所有节点基于最新代码' },
+      { cat: '全局构建', name: '全仓统筹构建', cmd: 'npm run build', desc: '统一执行一次全局前置打包' }
+    ],
+    globPost: [
+      { cat: '全局成功', name: '全局完工回显', cmd: 'echo \'==> 本批次所有服务节点全部部署完毕！\'', desc: '所有节点返回 200 后的本地终点' },
+      { cat: '群通知', name: '钉钉上线通知', cmd: 'curl -s -X POST \'https://oapi.dingtalk.com/robot/send?access_token=...\' -H \'Content-Type: application/json\' -d \'{"msgtype":"text","text":{"content":"🚀 批次全量节点部署完成"}}\'', desc: '发送全局大盘上线通知' }
+    ]
+  };
+
+  /* ===== 弹窗状态管理 ===== */
+  let pickerState = {
+    type: '', // 'path' or 'cmd'
+    targetField: '', // 如 'localPath', 'remotePath', 'preUploadLocal', 等
+    targetContext: null, // 如 groupName
+    activeCategory: '全部',
+    searchKeyword: '',
+    selectedValues: [] // 选中的值数组
+  };
+
   window.addEventListener('DOMContentLoaded', () => {
     loadConfig();
     setupKeyBindings();
@@ -502,6 +677,11 @@
         saveConfig();
       }
       if (e.key === 'Escape') {
+        const pickerModal = document.getElementById('picker-modal');
+        if (pickerModal && pickerModal.classList.contains('show')) {
+          closePicker();
+          return;
+        }
         const modal = document.getElementById('deploy-modal');
         if (modal && modal.classList.contains('show')) {
           closeTerminal();
@@ -798,47 +978,35 @@
         <div style="margin-bottom:14px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--muted);font-size:12px;line-height:1.6">
           💡 <b>分组生命周期说明</b>：此钩子仅当本次部署包含 <b>${escapeHtml(groupName)}</b> 组的服务时在本地独立触发一次。<br>
           • <b>preDeploy</b>：在该组所有远程服务开始调度前在本地运行（如前端 <code>npm run build</code>、后端 <code>go build</code>），若失败则阻断该组；<br>
-          • <b>postDeploy</b>：当且仅当该组的所有服务节点均成功返回时在本地触发（如健康检查或冒烟测试）。
+          • <b>postDeploy</b>：当且仅当该组的所有服务节点均成功返回时在本地触发（如健康检查或冒烟测试）。<br>
+          下方文本框<b>可直接打字手输命令</b>，也可点击「⚡ 弹窗选择命令」挑选预设。
         </div>
 
         <div class="grid" style="gap:14px">
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#2563eb">1</span>【${escapeHtml(groupName)} 组】并发启动前 · 本地命令 (preDeploy)<span class="where local">本地 · 仅一次</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 预设命令:</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'preDeploy', 'npm run build')">npm run build</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'preDeploy', 'pnpm build')">pnpm build</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'preDeploy', 'go build -o bin/${escapeHtml(groupName)} .')">go build</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'preDeploy', 'mvn clean package -DskipTests')">mvn build</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#2563eb">1</span>【${escapeHtml(groupName)} 组】并发启动前 · 本地命令 (preDeploy)</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地 · 仅一次</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPre', '${escapeHtml(groupName)}')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="gh-preDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'preDeploy', this.value)" placeholder="每行一条命令">${escapeHtml(arr(grp.hooks.preDeploy))}</textarea>
+            <textarea id="gh-preDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'preDeploy', this.value)" placeholder="可在此直接手输命令，每行一条&#10;例: cd frontend && npm run build&#10;例: go build -o bin/api ./cmd/api">${escapeHtml(arr(grp.hooks.preDeploy))}</textarea>
           </div>
 
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#16a34a">2</span>【${escapeHtml(groupName)} 组】全部成功后 · 本地命令 (postDeploy)<span class="where local">本地 · 仅一次</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 预设命令:</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'postDeploy', 'echo \'✅ ${escapeHtml(groupName)} 组节点部署完毕\'')">通知回显</span>
-              <span class="chip-btn" onclick="appendGroupHook('${escapeHtml(groupName)}', 'postDeploy', 'curl -sf http://127.0.0.1:8080/health || exit 1')">健康探测</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#16a34a">2</span>【${escapeHtml(groupName)} 组】全部成功后 · 本地命令 (postDeploy)</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地 · 仅一次</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('groupPost', '${escapeHtml(groupName)}')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="gh-postDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'postDeploy', this.value)" placeholder="每行一条命令">${escapeHtml(arr(grp.hooks.postDeploy))}</textarea>
+            <textarea id="gh-postDeploy" oninput="updGroupHook('${escapeHtml(groupName)}', 'postDeploy', this.value)" placeholder="可在此直接手输命令，每行一条&#10;例: echo '该组部署完毕'&#10;例: curl -s http://127.0.0.1:8080/health">${escapeHtml(arr(grp.hooks.postDeploy))}</textarea>
           </div>
         </div>
       </div>
     `;
-  }
-
-  function appendGroupHook(groupName, field, cmd) {
-    if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
-    let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === groupName.toLowerCase());
-    if (!grp) { grp = { name: groupName, hooks: {} }; deployConfig.groups.push(grp); }
-    if (!grp.hooks) grp.hooks = {};
-    if (!Array.isArray(grp.hooks[field])) grp.hooks[field] = [];
-    grp.hooks[field].push(cmd);
-    const ta = document.getElementById('gh-' + field);
-    if (ta) ta.value = grp.hooks[field].join('\n');
-    notifyChange();
-    showToast('已追加命令: ' + cmd);
   }
 
   function updGroupHook(groupName, field, val) {
@@ -865,44 +1033,35 @@
 
       <div style="padding:10px 0 24px">
         <div style="margin-bottom:14px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--muted);font-size:12px;line-height:1.6">
-          💡 <b>全局钩子说明</b>：<b>preDeploy</b> 在本批次所有服务器并发启动前在本地运行一次，失败立即中止；<b>postDeploy</b> 在所有服务均部署成功后在本地执行一次。
+          💡 <b>全局钩子说明</b>：<b>preDeploy</b> 在本批次所有服务器并发启动前在本地运行一次，失败立即中止；<b>postDeploy</b> 在所有服务均部署成功后在本地执行一次。<br>
+          下方文本框<b>可直接任意手输</b>，也可点击「⚡ 弹窗选择命令」从模版库选择追加。
         </div>
 
         <div class="grid" style="gap:14px">
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#2563eb">1</span>批次并发前 · 执行命令 (preDeploy)<span class="where local">本地 · 仅一次</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 预设命令:</span>
-              <span class="chip-btn" onclick="appendGlobalHook('preDeploy', 'echo \'==> 全局批次部署启动\'')">启动提示</span>
-              <span class="chip-btn" onclick="appendGlobalHook('preDeploy', 'git pull --rebase')">代码拉取</span>
-              <span class="chip-btn" onclick="appendGlobalHook('preDeploy', 'npm run build')">全局打包</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#2563eb">1</span>批次并发前 · 执行命令 (preDeploy)</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地 · 仅一次</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPre', 'global')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="glob-preDeploy" oninput="updGlobalHook('preDeploy', this.value)" placeholder="每行一条命令">${escapeHtml(arr(h.preDeploy))}</textarea>
+            <textarea id="glob-preDeploy" oninput="updGlobalHook('preDeploy', this.value)" placeholder="可在此直接手写命令，每行一条&#10;例: git pull --rebase&#10;例: npm run build">${escapeHtml(arr(h.preDeploy))}</textarea>
           </div>
 
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#16a34a">2</span>批次全部成功后 · 执行命令 (postDeploy)<span class="where local">本地 · 仅一次</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 预设命令:</span>
-              <span class="chip-btn" onclick="appendGlobalHook('postDeploy', 'echo \'==> 所有服务节点部署成功\'')">成功回显</span>
-              <span class="chip-btn" onclick="appendGlobalHook('postDeploy', 'curl -s \'https://oapi.dingtalk.com/robot/send?access_token=...\'')">钉钉通知</span>
-              <span class="chip-btn" onclick="appendGlobalHook('postDeploy', 'curl -s -X POST \'https://open.feishu.cn/open-apis/bot/v2/hook/...\'')">飞书通知</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#16a34a">2</span>批次全部成功后 · 执行命令 (postDeploy)</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地 · 仅一次</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('globPost', 'global')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="glob-postDeploy" oninput="updGlobalHook('postDeploy', this.value)" placeholder="每行一条命令">${escapeHtml(arr(h.postDeploy))}</textarea>
+            <textarea id="glob-postDeploy" oninput="updGlobalHook('postDeploy', this.value)" placeholder="可在此直接手写命令，每行一条&#10;例: echo '全局部署完成'&#10;例: curl -s 'https://oapi.dingtalk.com/robot/send?...'">${escapeHtml(arr(h.postDeploy))}</textarea>
           </div>
         </div>
       </div>
     `;
-  }
-
-  function appendGlobalHook(field, cmd) {
-    if (!deployConfig.hooks) deployConfig.hooks = {};
-    if (!Array.isArray(deployConfig.hooks[field])) deployConfig.hooks[field] = [];
-    deployConfig.hooks[field].push(cmd);
-    const ta = document.getElementById('glob-' + field);
-    if (ta) ta.value = deployConfig.hooks[field].join('\n');
-    notifyChange();
-    showToast('已追加命令: ' + cmd);
   }
 
   function updGlobalHook(field, val) {
@@ -930,9 +1089,9 @@
           <span class="checkbox"><svg viewBox="0 0 10 10" fill="none"><path d="M1.5 5.2 4 7.5 8.5 2.8" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           启用
         </label>
-        <button class="btn" style="padding:4px 9px;font-size:11.5px" onclick="startDeploy({ targetServices: ['${escapeHtml(svc.name)}'] })">⚡ 仅部署此服务</button>
-        <button class="btn" style="padding:4px 9px;font-size:11.5px" onclick="duplicateService(${i})">⧉ 复制</button>
-        <button class="btn danger-ghost" style="padding:4px 9px;font-size:11.5px" onclick="deleteService(${i})">🗑 删除</button>
+        <button class="btn sm-btn" onclick="startDeploy({ targetServices: ['${escapeHtml(svc.name)}'] })">⚡ 仅部署此服务</button>
+        <button class="btn sm-btn" onclick="duplicateService(${i})">⧉ 复制</button>
+        <button class="btn danger-ghost sm-btn" onclick="deleteService(${i})">🗑 删除</button>
       </div>
 
       <!-- 分组与任务属性栏 -->
@@ -976,24 +1135,24 @@
       <!-- Tab 1: 服务器连接 -->
       <div class="tab-pane ${activeTab === 'server' ? 'active' : ''}">
         <div class="grid g3">
-          <div class="field"><label>主机 IP / 域名 <b>*</b></label>
+          <div class="field"><label><span class="t">主机 IP / 域名 <b>*</b></span></label>
             <input value="${escapeHtml(s.host || '')}" placeholder="192.168.1.100" oninput="updServer('host', this.value)"></div>
-          <div class="field"><label>SSH 端口</label>
+          <div class="field"><label><span class="t">SSH 端口</span></label>
             <input type="number" value="${s.port || 22}" oninput="updServer('port', parseInt(this.value)||22)"></div>
-          <div class="field"><label>用户名 <b>*</b></label>
+          <div class="field"><label><span class="t">用户名 <b>*</b></span></label>
             <input value="${escapeHtml(s.username || '')}" placeholder="root" oninput="updServer('username', this.value)"></div>
-          <div class="field"><label>密码</label>
+          <div class="field"><label><span class="t">密码</span></label>
             <input type="password" value="${escapeHtml(s.password || '')}" placeholder="密码 / 私钥二选一" oninput="updServer('password', this.value)">
             <div class="hint">保持 ****** 则沿用现有安全密码或环境变量</div></div>
-          <div class="field"><label>私钥路径</label>
+          <div class="field"><label><span class="t">私钥路径</span></label>
             <input value="${escapeHtml(s.privateKeyPath || '')}" placeholder="~/.ssh/id_rsa" oninput="updServer('privateKeyPath', this.value)"></div>
-          <div class="field"><label>私钥口令 (Passphrase)</label>
+          <div class="field"><label><span class="t">私钥口令 (Passphrase)</span></label>
             <input type="password" value="${escapeHtml(s.passphrase || '')}" placeholder="无口令可留空" oninput="updServer('passphrase', this.value)">
             <div class="hint">若私钥受密码保护请在此填写</div></div>
-          <div class="field"><label>SSH 主机指纹 (Fingerprint)</label>
+          <div class="field"><label><span class="t">SSH 主机指纹 (Fingerprint)</span></label>
             <input value="${escapeHtml(s.hostKeyFingerprint || '')}" placeholder="选填 SHA256:..." oninput="updServer('hostKeyFingerprint', this.value)">
             <div class="hint">防中间人攻击，留空则跳过主机密钥严格比对</div></div>
-          <div class="field"><label>连接超时（秒）</label>
+          <div class="field"><label><span class="t">连接超时（秒）</span></label>
             <input type="number" value="${s.connectTimeout || 15}" oninput="updServer('connectTimeout', parseInt(this.value)||15)"></div>
         </div>
 
@@ -1003,51 +1162,43 @@
         </div>
       </div>
 
-      <!-- Tab 2: 文件传输 (交互式路径生成助手) -->
+      <!-- Tab 2: 文件传输 (支持直接填写 + 弹出选择框选择) -->
       <div class="tab-pane ${activeTab === 'upload' ? 'active' : ''}">
         <div class="grid g2">
           <div class="field">
-            <label>本地源路径 (localPath) <b>*</b></label>
-            <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="./dist" oninput="updUpload('localPath', this.value)">
-            <div class="chip-pool">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 常见预设:</span>
-              <span class="chip-btn" onclick="applyLocalPreset('./dist')">./dist (前端)</span>
-              <span class="chip-btn" onclick="applyLocalPreset('./build')">./build</span>
-              <span class="chip-btn" onclick="applyLocalPreset('./bin')">./bin (Go/二进制)</span>
-              <span class="chip-btn" onclick="applyLocalPreset('./target')">./target (Java)</span>
-              <span class="chip-btn" onclick="applyLocalPreset('./public')">./public</span>
+            <label>
+              <span class="t">本地源路径 (localPath) <b>*</b></span>
+              <button class="btn sm-btn picker-btn" onclick="openPathPicker('local')">📂 弹窗选择预设</button>
+            </label>
+            <div class="input-action-group">
+              <input id="input-localPath" value="${escapeHtml(u.localPath || '')}" placeholder="可直接手输，例: ./dist 或 ./bin" oninput="updUpload('localPath', this.value)">
             </div>
-            <div class="hint">支持单文件或整个目录递归流式上传</div>
+            <div class="hint">支持在输入框内直接输入任意自定义路径，或点击右上角弹窗快速挑选</div>
           </div>
 
           <div class="field">
-            <label>远端目标路径 (remotePath) <b>*</b></label>
-            <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}" placeholder="/opt/app/my-service"
-                   oninput="updUpload('remotePath', this.value);checkDangerousPath(this.value)">
-            <div class="chip-pool">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 规范模版:</span>
-              <span class="chip-btn" onclick="applyRemotePreset('/opt/app/{name}')">/opt/app/{name}</span>
-              <span class="chip-btn" onclick="applyRemotePreset('/data/www/{name}')">/data/www/{name}</span>
-              <span class="chip-btn" onclick="applyRemotePreset('/var/www/{name}')">/var/www/{name}</span>
-              <span class="chip-btn" onclick="applyRemotePreset('/usr/local/services/{name}')">/usr/local/{name}</span>
-              <span class="chip-btn" onclick="applyRemotePreset('/data/docker/{name}')">/data/docker/{name}</span>
+            <label>
+              <span class="t">远端目标路径 (remotePath) <b>*</b></span>
+              <button class="btn sm-btn picker-btn" onclick="openPathPicker('remote')">📂 弹窗选择规范路径</button>
+            </label>
+            <div class="input-action-group">
+              <input id="input-remotePath" value="${escapeHtml(u.remotePath || '')}" placeholder="可直接手输，例: /opt/app/my-app"
+                     oninput="updUpload('remotePath', this.value);checkDangerousPath(this.value)">
             </div>
             <div class="danger-alert" id="danger-path-alert">
               ⚠️ 警告：检测到该路径属于关键系统目录，在启用「清空目录」时将被严密拦截阻断！
             </div>
-            <div class="hint">远端父级目录不存在时将自动创建</div>
+            <div class="hint">远端父级目录不存在时将自动创建，支持输入框直接编辑</div>
           </div>
 
           <div class="field">
-            <label>排除规则（逗号分隔，支持通配符）</label>
-            <input value="${escapeHtml(exclude)}" placeholder=".git, *.log, node_modules" oninput="updExclude(this.value)">
-            <div class="chip-pool">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 常用排除:</span>
-              <span class="chip-btn" onclick="addExcludeRule('.git')">+.git</span>
-              <span class="chip-btn" onclick="addExcludeRule('node_modules')">+node_modules</span>
-              <span class="chip-btn" onclick="addExcludeRule('*.log')">+*.log</span>
-              <span class="chip-btn" onclick="addExcludeRule('.env')">+.env</span>
-              <span class="chip-btn" onclick="addExcludeRule('*.tmp')">+*.tmp</span>
+            <label><span class="t">排除规则（逗号分隔，支持通配符）</span></label>
+            <input value="${escapeHtml(exclude)}" placeholder="可直接输入，例: .git, *.log, node_modules" oninput="updExclude(this.value)">
+            <div class="hint" style="margin-top:5px">快速追加标签: 
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('.git')">+.git</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('node_modules')">+node_modules</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline;margin-right:6px" onclick="addExcludeRule('*.log')">+*.log</span>
+              <span style="color:var(--accent);cursor:pointer;text-decoration:underline" onclick="addExcludeRule('.env')">+.env</span>
             </div>
           </div>
 
@@ -1063,93 +1214,298 @@
         </div>
       </div>
 
-      <!-- Tab 3: 生命周期钩子 (常用命令片段快捷选择 + 自由手输) -->
+      <!-- Tab 3: 生命周期钩子 (支持直接多行输入 + 弹出选择框挑选) -->
       <div class="tab-pane ${activeTab === 'hooks' ? 'active' : ''}">
         <div class="hook-grid">
           <!-- 象限 1: 上传前 本地 -->
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#64748b">1</span>上传前 · 执行命令<span class="where local">本地</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 快捷追加:</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadLocal', 'npm run build')">npm build</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadLocal', 'pnpm build')">pnpm build</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadLocal', 'go build -o bin/{name} .')">go build</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadLocal', 'mvn clean package -DskipTests')">mvn pkg</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadLocal', 'docker build -t {name}:latest .')">docker build</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#64748b">1</span>上传前 · 执行命令</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadLocal')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="hook-preUploadLocal" oninput="updHook('preUploadLocal', this.value)" placeholder="每行一条命令&#10;例: npm run build">${escapeHtml(arr(h.preUploadLocal))}</textarea>
+            <textarea id="hook-preUploadLocal" oninput="updHook('preUploadLocal', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: npm run build&#10;例: go build -o bin/app .">${escapeHtml(arr(h.preUploadLocal))}</textarea>
           </div>
 
           <!-- 象限 2: 上传前 远端 -->
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:#64748b">2</span>上传前 · 执行命令<span class="where remote">远端</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 快捷追加:</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadRemote', 'mkdir -p {remotePath}')">创建目录</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadRemote', 'mkdir -p {remotePath}/backup && cp -r {remotePath}/* {remotePath}/backup/ 2>/dev/null || true')">备份旧版本</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadRemote', 'systemctl stop {name} || true')">停止服务</span>
-              <span class="chip-btn" onclick="appendHookCmd('preUploadRemote', 'pm2 stop {name} || true')">pm2 stop</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:#64748b">2</span>上传前 · 执行命令</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where remote">远端</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('preUploadRemote')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="hook-preUploadRemote" oninput="updHook('preUploadRemote', this.value)" placeholder="每行一条命令&#10;例: systemctl stop {name}">${escapeHtml(arr(h.preUploadRemote))}</textarea>
+            <textarea id="hook-preUploadRemote" oninput="updHook('preUploadRemote', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: systemctl stop my-app || true&#10;例: mkdir -p /opt/app/backup">${escapeHtml(arr(h.preUploadRemote))}</textarea>
           </div>
 
           <!-- 象限 3: 上传后 远端 -->
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:var(--accent)">3</span>上传后 · 执行命令<span class="where remote">远端</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 快捷追加:</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadRemote', 'systemctl daemon-reload && systemctl restart {name}')">systemctl restart</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadRemote', 'chmod +x {remotePath}/{name} && nohup {remotePath}/{name} > {remotePath}/app.log 2>&1 &')">nohup后台</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadRemote', 'docker compose up -d --build')">compose up</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadRemote', 'pm2 reload {name}')">pm2 reload</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadRemote', 'sleep 2 && curl -sf http://127.0.0.1:8080/health || exit 1')">健康检查</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:var(--accent)">3</span>上传后 · 执行命令</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where remote">远端</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadRemote')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="hook-postUploadRemote" oninput="updHook('postUploadRemote', this.value)" placeholder="每行一条命令&#10;例: systemctl restart {name}">${escapeHtml(arr(h.postUploadRemote))}</textarea>
+            <textarea id="hook-postUploadRemote" oninput="updHook('postUploadRemote', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: systemctl daemon-reload && systemctl restart my-app&#10;例: curl -sf http://127.0.0.1:8080/health || exit 1">${escapeHtml(arr(h.postUploadRemote))}</textarea>
           </div>
 
           <!-- 象限 4: 上传后 本地 -->
           <div class="hook-card">
-            <div class="hc-head"><span class="step" style="background:var(--accent)">4</span>上传后 · 执行命令<span class="where local">本地</span></div>
-            <div class="chip-pool" style="margin-bottom:6px">
-              <span style="font-size:10.5px;color:var(--muted)">✨ 快捷追加:</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadLocal', 'echo \'✅ 服务 {name} 部署完成\'')">完成提示</span>
-              <span class="chip-btn" onclick="appendHookCmd('postUploadLocal', 'curl -s http://{host}:8080/health')">探测主机</span>
+            <div class="hc-head">
+              <div class="hc-left"><span class="step" style="background:var(--accent)">4</span>上传后 · 执行命令</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="where local">本地</span>
+                <button class="btn sm-btn picker-btn" onclick="openCommandPicker('postUploadLocal')">⚡ 弹窗选择命令</button>
+              </div>
             </div>
-            <textarea id="hook-postUploadLocal" oninput="updHook('postUploadLocal', this.value)" placeholder="每行一条命令&#10;例: echo '部署完成'">${escapeHtml(arr(h.postUploadLocal))}</textarea>
+            <textarea id="hook-postUploadLocal" oninput="updHook('postUploadLocal', this.value)" placeholder="可直接在此手输多行命令，每行一条&#10;例: echo '部署完毕'&#10;例: curl -s http://192.168.1.100:8080/health">${escapeHtml(arr(h.postUploadLocal))}</textarea>
           </div>
-          <div class="flow-hint">执行顺序：<b>①本地前置</b> → SSH 连接 → <b>②远端前置</b> → SFTP 上传 → <b>③远端后置</b> → <b>④本地后置</b>；支持 <code>{name}</code>、<code>{remotePath}</code>、<code>{host}</code> 动态宏展开。</div>
+          <div class="flow-hint">执行顺序：<b>①本地前置</b> → SSH 连接 → <b>②远端前置</b> → SFTP 上传 → <b>③远端后置</b> → <b>④本地后置</b>；文本框支持自由手输与随时修改，点击右上角可呼出常用模版选择框。</div>
         </div>
       </div>
     `;
 
-    // 渲染完成后即刻进行一次危险路径校验
     checkDangerousPath(u.remotePath || '');
   }
 
   function switchTab(t) { activeTab = t; renderEditorInner(); }
 
-  /* ===== 交互式路径生成助手逻辑 ===== */
-  function applyLocalPreset(p) {
-    const s = deployConfig.services[currentIndex];
-    if (!s.upload) s.upload = {};
-    s.upload.localPath = p;
-    const inp = document.getElementById('input-localPath');
-    if (inp) inp.value = p;
-    notifyChange();
-    showToast('已应用本地路径: ' + p);
+  /* ===== 交互式选择弹窗逻辑 (Picker Dialog) ===== */
+  function onPickerBackdropClick(e) {
+    if (e.target.id === 'picker-modal') {
+      closePicker();
+    }
   }
 
-  function applyRemotePreset(tpl) {
-    const s = deployConfig.services[currentIndex];
-    const name = s.name || 'app';
-    const computed = tpl.replace(/{name}/g, name);
-    if (!s.upload) s.upload = {};
-    s.upload.remotePath = computed;
-    const inp = document.getElementById('input-remotePath');
-    if (inp) inp.value = computed;
-    checkDangerousPath(computed);
-    notifyChange();
-    showToast('已应用远端路径: ' + computed);
+  function closePicker() {
+    document.getElementById('picker-modal').classList.remove('show');
+  }
+
+  // 1. 呼出路径选择弹窗
+  function openPathPicker(targetField) {
+    pickerState.type = 'path';
+    pickerState.targetField = targetField;
+    pickerState.activeCategory = '全部';
+    pickerState.searchKeyword = '';
+    pickerState.selectedValues = [];
+
+    const titleEl = document.getElementById('pd-title');
+    const isLocal = targetField === 'local';
+    titleEl.innerHTML = `<span>📂</span> 选择${isLocal ? '本地源路径预设' : '远端目标路径规范模版'}`;
+    document.getElementById('pd-search').value = '';
+    document.getElementById('pd-foot-tip').textContent = '点击任意选项可直接填入，输入框仍完全保留手输能力';
+    document.getElementById('pd-btn-confirm').textContent = '填入所选路径';
+
+    renderPickerCategories();
+    renderPickerList();
+    document.getElementById('picker-modal').classList.add('show');
+  }
+
+  // 2. 呼出命令选择弹窗
+  function openCommandPicker(stageKey, contextVal = null) {
+    pickerState.type = 'cmd';
+    pickerState.targetField = stageKey;
+    pickerState.targetContext = contextVal;
+    pickerState.activeCategory = '全部';
+    pickerState.searchKeyword = '';
+    pickerState.selectedValues = [];
+
+    const stageNames = {
+      preUploadLocal: '上传前·本地构建',
+      preUploadRemote: '上传前·远端停机/环境',
+      postUploadRemote: '上传后·远端重启/守护',
+      postUploadLocal: '上传后·本地回显/探测',
+      groupPre: '分组启动前·本地命令',
+      groupPost: '分组成功后·本地命令',
+      globPre: '批次启动前·全局命令',
+      globPost: '批次成功后·全局通知'
+    };
+
+    const titleEl = document.getElementById('pd-title');
+    titleEl.innerHTML = `<span>⚡</span> 选取常用预备命令 <span style="font-size:12px;color:var(--accent)">(${stageNames[stageKey] || stageKey})</span>`;
+    document.getElementById('pd-search').value = '';
+    document.getElementById('pd-foot-tip').textContent = '支持勾选多条命令一键追加到文本框中，原文本框内容保留';
+    document.getElementById('pd-btn-confirm').textContent = '追加选定命令';
+
+    renderPickerCategories();
+    renderPickerList();
+    document.getElementById('picker-modal').classList.add('show');
+  }
+
+  function getRawPickerItems() {
+    if (pickerState.type === 'path') {
+      return PATH_PRESETS[pickerState.targetField] || [];
+    }
+    return COMMAND_PRESETS[pickerState.targetField] || [];
+  }
+
+  function renderPickerCategories() {
+    const rawItems = getRawPickerItems();
+    const catsSet = new Set(['全部']);
+    rawItems.forEach(item => item.cat && catsSet.add(item.cat));
+
+    const catsEl = document.getElementById('pd-cats');
+    catsEl.innerHTML = '';
+    catsSet.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'pd-cat-btn' + (pickerState.activeCategory === cat ? ' active' : '');
+      btn.textContent = cat;
+      btn.onclick = () => {
+        pickerState.activeCategory = cat;
+        renderPickerCategories();
+        renderPickerList();
+      };
+      catsEl.appendChild(btn);
+    });
+  }
+
+  function onPickerSearch(val) {
+    pickerState.searchKeyword = (val || '').trim().toLowerCase();
+    renderPickerList();
+  }
+
+  function renderPickerList() {
+    const listEl = document.getElementById('pd-list');
+    listEl.innerHTML = '';
+    const rawItems = getRawPickerItems();
+
+    // 解析当前上下文宏变量
+    let currentSvcName = 'app';
+    let currentHost = '127.0.0.1';
+    let currentRPath = '/opt/app/app';
+
+    if (currentIndex >= 0 && deployConfig.services[currentIndex]) {
+      const svc = deployConfig.services[currentIndex];
+      currentSvcName = svc.name || 'app';
+      currentHost = svc.server?.host || '127.0.0.1';
+      currentRPath = svc.upload?.remotePath || `/opt/app/${currentSvcName}`;
+    } else if (pickerState.targetContext) {
+      currentSvcName = pickerState.targetContext;
+    }
+
+    const filtered = rawItems.filter(item => {
+      if (pickerState.activeCategory !== '全部' && item.cat !== pickerState.activeCategory) return false;
+      if (pickerState.searchKeyword) {
+        const text = `${item.name} ${item.cat} ${item.desc || ''} ${item.path || ''} ${item.cmd || ''}`.toLowerCase();
+        if (!text.includes(pickerState.searchKeyword)) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;padding:36px;color:var(--faint);font-size:12.5px">未找到匹配的预设选项</div>';
+      return;
+    }
+
+    filtered.forEach((item, idx) => {
+      const isPath = pickerState.type === 'path';
+      const rawCode = isPath ? item.path : item.cmd;
+      const computedCode = rawCode
+        .replace(/{name}/g, currentSvcName)
+        .replace(/{remotePath}/g, currentRPath)
+        .replace(/{host}/g, currentHost);
+
+      const isSelected = pickerState.selectedValues.includes(computedCode);
+
+      const card = document.createElement('div');
+      card.className = 'pd-item' + (isSelected ? ' selected' : '');
+      card.onclick = () => {
+        if (isPath) {
+          // 路径单选：选中并直接确认填入
+          pickerState.selectedValues = [computedCode];
+          confirmPicker();
+        } else {
+          // 命令多选/单选
+          const existsIdx = pickerState.selectedValues.indexOf(computedCode);
+          if (existsIdx >= 0) {
+            pickerState.selectedValues.splice(existsIdx, 1);
+          } else {
+            pickerState.selectedValues.push(computedCode);
+          }
+          renderPickerList();
+        }
+      };
+
+      card.innerHTML = `
+        <input type="${isPath ? 'radio' : 'checkbox'}" class="pd-item-check" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();this.parentNode.click()">
+        <div class="pd-item-main">
+          <div class="pd-item-title">
+            <span>${escapeHtml(item.name)}</span>
+            <span class="pd-item-cat">${escapeHtml(item.cat)}</span>
+          </div>
+          <div class="pd-item-desc">${escapeHtml(item.desc || '')}</div>
+          <div class="pd-item-code">${escapeHtml(computedCode)}</div>
+        </div>
+      `;
+      listEl.appendChild(card);
+    });
+  }
+
+  function confirmPicker() {
+    if (pickerState.selectedValues.length === 0) {
+      showToast('请先点击选择至少一个选项', 'error');
+      return;
+    }
+
+    if (pickerState.type === 'path') {
+      const pathVal = pickerState.selectedValues[0];
+      const s = deployConfig.services[currentIndex];
+      if (!s.upload) s.upload = {};
+
+      if (pickerState.targetField === 'local') {
+        s.upload.localPath = pathVal;
+        const inp = document.getElementById('input-localPath');
+        if (inp) inp.value = pathVal;
+        showToast('已填入本地路径: ' + pathVal);
+      } else {
+        s.upload.remotePath = pathVal;
+        const inp = document.getElementById('input-remotePath');
+        if (inp) inp.value = pathVal;
+        checkDangerousPath(pathVal);
+        showToast('已填入远端路径: ' + pathVal);
+      }
+      notifyChange();
+      closePicker();
+    } else {
+      // 命令追加
+      const cmds = pickerState.selectedValues;
+      const stage = pickerState.targetField;
+
+      if (stage === 'globPre' || stage === 'globPost') {
+        const field = stage === 'globPre' ? 'preDeploy' : 'postDeploy';
+        if (!deployConfig.hooks) deployConfig.hooks = {};
+        if (!Array.isArray(deployConfig.hooks[field])) deployConfig.hooks[field] = [];
+        deployConfig.hooks[field].push(...cmds);
+        const ta = document.getElementById('glob-' + field);
+        if (ta) ta.value = deployConfig.hooks[field].join('\n');
+      } else if (stage === 'groupPre' || stage === 'groupPost') {
+        const field = stage === 'groupPre' ? 'preDeploy' : 'postDeploy';
+        const groupName = pickerState.targetContext;
+        let grp = deployConfig.groups.find(g => (g.name || '').toLowerCase() === (groupName || '').toLowerCase());
+        if (!grp) { grp = { name: groupName, hooks: {} }; deployConfig.groups.push(grp); }
+        if (!grp.hooks) grp.hooks = {};
+        if (!Array.isArray(grp.hooks[field])) grp.hooks[field] = [];
+        grp.hooks[field].push(...cmds);
+        const ta = document.getElementById('gh-' + field);
+        if (ta) ta.value = grp.hooks[field].join('\n');
+      } else {
+        // 服务专属钩子
+        const s = deployConfig.services[currentIndex];
+        if (!s.hooks) s.hooks = {};
+        if (!Array.isArray(s.hooks[stage])) s.hooks[stage] = [];
+        s.hooks[stage].push(...cmds);
+        const ta = document.getElementById('hook-' + stage);
+        if (ta) ta.value = s.hooks[stage].join('\n');
+      }
+
+      notifyChange();
+      closePicker();
+      showToast(`已追加 ${cmds.length} 条命令到文本框`);
+    }
   }
 
   function addExcludeRule(rule) {
@@ -1180,28 +1536,6 @@
   function onServiceNameChange() {
     renderSidebar();
     notifyChange();
-  }
-
-  /* ===== 常用命令快捷追加 ===== */
-  function appendHookCmd(field, tpl) {
-    const s = deployConfig.services[currentIndex];
-    const name = s.name || 'app';
-    const rPath = s.upload?.remotePath || `/opt/app/${name}`;
-    const host = s.server?.host || '127.0.0.1';
-
-    const cmd = tpl
-      .replace(/{name}/g, name)
-      .replace(/{remotePath}/g, rPath)
-      .replace(/{host}/g, host);
-
-    if (!s.hooks) s.hooks = {};
-    if (!Array.isArray(s.hooks[field])) s.hooks[field] = [];
-    s.hooks[field].push(cmd);
-
-    const ta = document.getElementById('hook-' + field);
-    if (ta) ta.value = s.hooks[field].join('\n');
-    notifyChange();
-    showToast('已追加命令: ' + cmd);
   }
 
   /* ===== SSH 连通性测试 ===== */
@@ -1411,7 +1745,6 @@
       div.innerHTML = ansiToHtml(d);
       term.appendChild(div);
 
-      // 智能滚屏：若用户未向上滚动，则保持吸底
       if (!userScrolledUp) {
         term.scrollTop = term.scrollHeight;
       }
