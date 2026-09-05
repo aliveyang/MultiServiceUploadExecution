@@ -11,6 +11,7 @@ multi-service-deploy
 *.log
 *.tmp
 *.out
+*.pid
 
 # IDE & Editor
 .idea/
