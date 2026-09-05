@@ -15,9 +15,12 @@ import (
 	"multi-service-deploy/web"
 )
 
-const (
+var (
 	Version = "1.0.0"
-	Banner  = `
+)
+
+const (
+	Banner = `
   __  __       _ _   _ _____                 _          
  |  \/  |_   _| | |_(_)  ___|__ _ __ __   _(_) ___ ___ 
  | |\/| | | | | | __| | |_ / _ \ '__|\ \ / / |/ __/ _ \
@@ -62,7 +65,7 @@ func main() {
 		flag.BoolVar(&versionFlag, "version", false, "Print version information")
 
 		flag.Usage = func() {
-			fmt.Printf(Banner, Version)
+			fmt.Printf(Banner, strings.TrimPrefix(Version, "v"))
 			fmt.Println("Usage:")
 			fmt.Println("  deploy [options]")
 			fmt.Println("\nOptions:")
@@ -90,7 +93,7 @@ func main() {
 	flag.Parse()
 
 	if versionFlag {
-		fmt.Printf("Multi-Service Deployment Tool v%s (Zero-dependency Go build)\n", Version)
+		fmt.Printf("Multi-Service Deployment Tool v%s (Zero-dependency Go build)\n", strings.TrimPrefix(Version, "v"))
 		os.Exit(0)
 	}
 

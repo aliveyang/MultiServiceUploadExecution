@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '发布版本号 Tag（例如 v1.0.0）'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Resolve Release Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          # 确保 tag 包含 v 前缀
+          if [[ ! "$TAG" =~ ^v ]]; then
+            TAG="v${TAG}"
+          fi
+          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+          echo "Release target version: ${TAG}"
+
+      - name: Verify Code Quality & Tests
+        run: |
+          echo "==> Running static analysis (go vet)..."
+          go vet ./...
+          echo "==> Running full test suite..."
+          go test -v ./...
+
+      - name: Build Cross-Platform Binaries & Archives
+        run: |
+          TAG="${{ steps.vars.outputs.TAG }}"
+          mkdir -p dist
+          
+          # 目标平台矩阵: OS:ARCH:EXT
+          PLATFORMS=(
+            "windows:amd64:.exe"
+            "windows:arm64:.exe"
+            "linux:amd64:"
+            "linux:arm64:"
+            "darwin:amd64:"
+            "darwin:arm64:"
+          )
+          
+          for item in "${PLATFORMS[@]}"; do
+            IFS=":" read -r GOOS GOARCH EXT <<< "${item}"
+            echo "----------------------------------------------------"
+            echo "==> Compiling for ${GOOS}/${GOARCH}..."
+            
+            BUILD_TMP="build_${GOOS}_${GOARCH}"
+            mkdir -p "${BUILD_TMP}"
+            
+            BIN_NAME="deploy${EXT}"
+            
+            CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build -trimpath \
+              -ldflags="-s -w -X 'main.Version=${TAG}'" \
+              -o "${BUILD_TMP}/${BIN_NAME}" main.go
+              
+            # 复制配置文件和说明文档
+            cp deploy.json "${BUILD_TMP}/"
+            cp README.md "${BUILD_TMP}/"
+            
+            if [ "${GOOS}" = "windows" ]; then
+              cp start.bat stop.bat "${BUILD_TMP}/" 2>/dev/null || true
+              ARCHIVE="deploy_${TAG}_${GOOS}_${GOARCH}.zip"
+              (cd "${BUILD_TMP}" && zip -q -r "../../dist/${ARCHIVE}" .)
+            else
+              chmod +x "${BUILD_TMP}/${BIN_NAME}"
+              ARCHIVE="deploy_${TAG}_${GOOS}_${GOARCH}.tar.gz"
+              tar -czf "dist/${ARCHIVE}" -C "${BUILD_TMP}" .
+            fi
+            
+            rm -rf "${BUILD_TMP}"
+            echo "Packaged: dist/${ARCHIVE}"
+          done
+
+      - name: Generate Checksums
+        run: |
+          echo "==> Computing SHA256 checksums..."
+          cd dist
+          rm -f checksums.txt
+          sha256sum deploy_* > checksums.txt
+          cat checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG }}
+          name: Release ${{ steps.vars.outputs.TAG }}
+          files: |
+            dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
