@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
 const (
@@ -31,64 +31,70 @@ const (
 )
 
 func main() {
-		var (
-			configFile  string
-			targetsStr  string
-			groupsStr   string
-			typesStr    string
-			scenarioStr string
-			parallelStr string
-			maxWorkers  int
-			webFlag     bool
-			webAddr     string
-			initFlag    bool
-			versionFlag bool
-		)
+			var (
+				configFile   string
+				workspaceStr string
+				targetsStr   string
+				groupsStr    string
+				typesStr     string
+				scenarioStr  string
+				parallelStr  string
+				maxWorkers   int
+				webFlag      bool
+				webAddr      string
+				initFlag     bool
+				versionFlag  bool
+			)
 
-		flag.StringVar(&configFile, "c", "", "Path to configuration file (default: deploy.json or deploy.yaml)")
-		flag.StringVar(&configFile, "config", "", "Path to configuration file")
-		flag.StringVar(&targetsStr, "t", "", "Comma-separated target service names to deploy (e.g. -t web-1,api-1)")
-		flag.StringVar(&targetsStr, "target", "", "Comma-separated target service names to deploy")
-		flag.StringVar(&groupsStr, "g", "", "Comma-separated target group names to deploy (e.g. -g frontend,backend)")
-		flag.StringVar(&groupsStr, "group", "", "Comma-separated target group names to deploy")
-		flag.StringVar(&typesStr, "type", "", "Target deploy type to filter (e.g. --type exec_only, standard, sync_only)")
-		flag.StringVar(&scenarioStr, "s", "", "Target deployment scenario preset name (e.g. -s prod, -s quick-restart)")
-		flag.StringVar(&scenarioStr, "scenario", "", "Target deployment scenario preset name")
-		flag.StringVar(&parallelStr, "p", "", "Override parallel mode (true or false)")
-		flag.StringVar(&parallelStr, "parallel", "", "Override parallel mode (true or false)")
-		flag.IntVar(&maxWorkers, "j", 10, "Maximum concurrent worker goroutines when in parallel mode (default 10)")
-		flag.IntVar(&maxWorkers, "max-workers", 10, "Maximum concurrent worker goroutines when in parallel mode")
-		flag.BoolVar(&webFlag, "web", false, "Start Web-based configuration & deployment UI")
-		flag.StringVar(&webAddr, "addr", "127.0.0.1:8080", "Web UI listen address, used with -web (default 127.0.0.1:8080)")
-		flag.BoolVar(&initFlag, "init", false, "Generate example configuration file (deploy.example.json)")
-		flag.BoolVar(&versionFlag, "v", false, "Print version information")
-		flag.BoolVar(&versionFlag, "version", false, "Print version information")
+			flag.StringVar(&configFile, "c", "", "Path to configuration file (default: deploy.json or deploy.yaml)")
+			flag.StringVar(&configFile, "config", "", "Path to configuration file")
+			flag.StringVar(&workspaceStr, "w", "", "Target workspace to deploy or open (e.g. -w prod, -w default)")
+			flag.StringVar(&workspaceStr, "workspace", "", "Target workspace to deploy or open")
+			flag.StringVar(&targetsStr, "t", "", "Comma-separated target service names to deploy (e.g. -t web-1,api-1)")
+			flag.StringVar(&targetsStr, "target", "", "Comma-separated target service names to deploy")
+			flag.StringVar(&groupsStr, "g", "", "Comma-separated target group names to deploy (e.g. -g frontend,backend)")
+			flag.StringVar(&groupsStr, "group", "", "Comma-separated target group names to deploy")
+			flag.StringVar(&typesStr, "type", "", "Target deploy type to filter (e.g. --type exec_only, standard, sync_only)")
+			flag.StringVar(&scenarioStr, "s", "", "Target deployment scenario preset name (e.g. -s prod, -s quick-restart)")
+			flag.StringVar(&scenarioStr, "scenario", "", "Target deployment scenario preset name")
+			flag.StringVar(&parallelStr, "p", "", "Override parallel mode (true or false)")
+			flag.StringVar(&parallelStr, "parallel", "", "Override parallel mode (true or false)")
+			flag.IntVar(&maxWorkers, "j", 10, "Maximum concurrent worker goroutines when in parallel mode (default 10)")
+			flag.IntVar(&maxWorkers, "max-workers", 10, "Maximum concurrent worker goroutines when in parallel mode")
+			flag.BoolVar(&webFlag, "web", false, "Start Web-based configuration & deployment UI")
+			flag.StringVar(&webAddr, "addr", "127.0.0.1:8080", "Web UI listen address, used with -web (default 127.0.0.1:8080)")
+			flag.BoolVar(&initFlag, "init", false, "Generate example configuration file (deploy.example.json)")
+			flag.BoolVar(&versionFlag, "v", false, "Print version information")
+			flag.BoolVar(&versionFlag, "version", false, "Print version information")
 
-		flag.Usage = func() {
-			fmt.Printf(Banner, strings.TrimPrefix(Version, "v"))
-			fmt.Println("Usage:")
-			fmt.Println("  deploy [options]")
-			fmt.Println("\nOptions:")
-			fmt.Println("  -web                    Start Web configuration UI & Live Console")
-			fmt.Println("  -addr <addr>            Web UI listen address, used with -web (default 127.0.0.1:8080)")
-			fmt.Println("  -c, --config <file>     Specify configuration file path (default: deploy.json / deploy.yaml)")
-			fmt.Println("  -s, --scenario <name>   Deploy by predefined scenario (e.g. -s prod, -s backend-only)")
-			fmt.Println("  -g, --group <names>     Only deploy specific service groups (comma-separated, e.g. -g infra,backend)")
-			fmt.Println("  -t, --target <names>    Only deploy specific services by name (comma-separated, e.g. -t web-1,api-1)")
-			fmt.Println("      --type <type>       Filter deploy by task type: standard, exec_only, sync_only")
-			fmt.Println("  -p, --parallel <bool>   Override concurrency mode: true (default) or false (serial)")
-			fmt.Println("  -j, --max-workers <n>   Max parallel workers within each stage (default 10, 0 for unlimited)")
-			fmt.Println("  -init                   Generate an example deploy.example.json template in current directory")
-			fmt.Println("  -v, --version           Show tool version")
-			fmt.Println("  -h, --help              Show help information")
-			fmt.Println("\nExamples:")
-			fmt.Println("  deploy -web                     # Launch visual Web UI in browser (127.0.0.1:8080)")
-			fmt.Println("  deploy -s prod                  # Deploy full production scenario (ordered by stages)")
-			fmt.Println("  deploy -g frontend              # Deploy only frontend group")
-			fmt.Println("  deploy --type exec_only         # Only execute remote commands (e.g. migrations, restarts)")
-			fmt.Println("  deploy -g backend -j 5          # Concurrently deploy backend group with 5 workers")
-			fmt.Println("  deploy -c deploy.yaml -t api-01 # Deploy single service with custom config")
-		}
+			flag.Usage = func() {
+				fmt.Printf(Banner, strings.TrimPrefix(Version, "v"))
+				fmt.Println("Usage:")
+				fmt.Println("  deploy [options]")
+				fmt.Println("\nOptions:")
+				fmt.Println("  -web                    Start Web configuration UI & Live Console")
+				fmt.Println("  -addr <addr>            Web UI listen address, used with -web (default 127.0.0.1:8080)")
+				fmt.Println("  -w, --workspace <name>  Specify isolated workspace to deploy (e.g. -w prod, -w default)")
+				fmt.Println("  -c, --config <file>     Specify configuration file path (default: deploy.json / deploy.yaml)")
+				fmt.Println("  -s, --scenario <name>   Deploy by predefined scenario (e.g. -s prod, -s backend-only)")
+				fmt.Println("  -g, --group <names>     Only deploy specific service groups (comma-separated, e.g. -g infra,backend)")
+				fmt.Println("  -t, --target <names>    Only deploy specific services by name (comma-separated, e.g. -t web-1,api-1)")
+				fmt.Println("      --type <type>       Filter deploy by task type: standard, exec_only, sync_only")
+				fmt.Println("  -p, --parallel <bool>   Override concurrency mode: true (default) or false (serial)")
+				fmt.Println("  -j, --max-workers <n>   Max parallel workers within each stage (default 10, 0 for unlimited)")
+				fmt.Println("  -init                   Generate an example deploy.example.json template in current directory")
+				fmt.Println("  -v, --version           Show tool version")
+				fmt.Println("  -h, --help              Show help information")
+				fmt.Println("\nExamples:")
+				fmt.Println("  deploy -web                     # Launch visual Web UI in browser (127.0.0.1:8080)")
+				fmt.Println("  deploy -w prod                  # Deploy default scenario in 'prod' workspace")
+				fmt.Println("  deploy -w staging -s quick      # Deploy 'quick' scenario in 'staging' workspace")
+				fmt.Println("  deploy -s prod                  # Deploy full production scenario (ordered by stages)")
+				fmt.Println("  deploy -g frontend              # Deploy only frontend group")
+				fmt.Println("  deploy --type exec_only         # Only execute remote commands (e.g. migrations, restarts)")
+				fmt.Println("  deploy -g backend -j 5          # Concurrently deploy backend group with 5 workers")
+				fmt.Println("  deploy -c deploy.yaml -t api-01 # Deploy single service with custom config")
+			}
 
 	flag.Parse()
 
@@ -113,38 +119,45 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// 启动 Web 管理界面
-	if webFlag {
-		fmt.Printf(Banner, Version)
-		resolvedConfig := resolveConfigFile(configFile)
-		if resolvedConfig == "" {
-			resolvedConfig = "deploy.json"
+		// 启动 Web 管理界面
+		if webFlag {
+			fmt.Printf(Banner, Version)
+			resolvedConfig := resolveConfigFile(configFile, workspaceStr)
+			if resolvedConfig == "" {
+				resolvedConfig = "deploy.json"
+			}
+			server := web.NewServer(webAddr, resolvedConfig)
+			if workspaceStr != "" && config.IsValidWorkspaceID(workspaceStr) {
+				server.SetCurrentWorkspace(workspaceStr)
+			}
+			// DEPLOY_NO_OPEN=1 时跳过自动打开浏览器（用于无头/CI 环境）
+			autoOpen := os.Getenv("DEPLOY_NO_OPEN") != "1"
+			if err := server.StartContext(ctx, autoOpen); err != nil {
+				logger.Error("Failed to start Web server: %v", err)
+				os.Exit(1)
+			}
+			return
 		}
-		server := web.NewServer(webAddr, resolvedConfig)
-		// DEPLOY_NO_OPEN=1 时跳过自动打开浏览器（用于无头/CI 环境）
-		autoOpen := os.Getenv("DEPLOY_NO_OPEN") != "1"
-		if err := server.StartContext(ctx, autoOpen); err != nil {
-			logger.Error("Failed to start Web server: %v", err)
+
+		fmt.Printf(Banner, Version)
+
+		// 命令行模式：自动探测配置文件
+		resolvedConfigPath := resolveConfigFile(configFile, workspaceStr)
+		if resolvedConfigPath == "" {
+			if workspaceStr != "" {
+				logger.Error("Workspace %q not found in %s directory. Run 'deploy -web' to manage workspaces.", workspaceStr, config.DefaultWorkspaceDir)
+			} else {
+				logger.Error("Configuration file not found. Please provide one with '-c <path>', '-w <workspace>', or run 'deploy -init' to create an example, or use 'deploy -web' for GUI.")
+			}
 			os.Exit(1)
 		}
-		return
-	}
 
-	fmt.Printf(Banner, Version)
-
-	// 命令行模式：自动探测配置文件
-	resolvedConfigPath := resolveConfigFile(configFile)
-	if resolvedConfigPath == "" {
-		logger.Error("Configuration file not found. Please provide one with '-c <path>' or run 'deploy -init' to create an example, or use 'deploy -web' for GUI.")
-		os.Exit(1)
-	}
-
-	logger.System("Loading configuration: %s", resolvedConfigPath)
-	cfg, err := config.LoadConfig(resolvedConfigPath)
-	if err != nil {
-		logger.Error("Failed to load configuration: %v", err)
-		os.Exit(1)
-	}
+		logger.System("Loading configuration: %s", resolvedConfigPath)
+		cfg, err := config.LoadConfig(resolvedConfigPath)
+		if err != nil {
+			logger.Error("Failed to load configuration: %v", err)
+			os.Exit(1)
+		}
 
 	// 构建运行选项
 	opts := deployer.DeployOptions{
@@ -184,13 +197,35 @@ func main() {
 	}
 }
 
-// resolveConfigFile 查找配置文件：若未指定则依次查找 deploy.json, deploy.yaml, deploy.yml
-func resolveConfigFile(specified string) string {
-	if specified != "" {
-		if _, err := os.Stat(specified); err == nil {
-			return specified
+// resolveConfigFile 查找配置文件：
+// 1. 若显式指定 -c/--config，优先读取该文件；
+// 2. 若指定 -w/--workspace，在 workspaces/ 目录下查找对应文件；
+// 3. 若均未指定，优先查找 workspaces/default.json，其次查找当前目录下 deploy.json, deploy.yaml, deploy.yml
+func resolveConfigFile(specifiedConfig, specifiedWorkspace string) string {
+	if specifiedConfig != "" {
+		if _, err := os.Stat(specifiedConfig); err == nil {
+			return specifiedConfig
 		}
 		return ""
+	}
+
+	if specifiedWorkspace != "" {
+		if config.IsValidWorkspaceID(specifiedWorkspace) {
+			if wsPath, err := config.GetWorkspacePath(config.DefaultWorkspaceDir, specifiedWorkspace); err == nil {
+				if _, err := os.Stat(wsPath); err == nil {
+					return wsPath
+				}
+			}
+		}
+		return ""
+	}
+
+	// 优先查找 default 工作空间
+	defaultWsPath, err := config.GetWorkspacePath(config.DefaultWorkspaceDir, config.DefaultWorkspaceID)
+	if err == nil {
+		if _, err := os.Stat(defaultWsPath); err == nil {
+			return defaultWsPath
+		}
 	}
 
 	defaults := []string{"deploy.json", "deploy.yaml", "deploy.yml"}

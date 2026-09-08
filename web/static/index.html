@@ -1096,6 +1096,15 @@
 
     <div class="header-sep"></div>
 
+    <!-- 工作空间切换 -->
+    <div class="scenario-pill" id="workspace-pill" title="切换当前部署工作空间（配置物理隔离）">
+      <span style="font-weight:700;color:var(--muted)">📁 空间:</span>
+      <select id="workspace-select" onchange="onWorkspaceSelectChange(this.value)">
+        <option value="default">默认空间 (default)</option>
+      </select>
+      <button class="btn sm-btn" style="padding:2px 6px;height:24px;font-size:11px;margin-left:2px;border:none;background:transparent;color:var(--text)" title="工作空间管理操作" onclick="openWorkspaceActionMenu()">⋮</button>
+    </div>
+
     <!-- 场景切换 -->
     <div class="scenario-pill" title="切换业务部署场景白名单">
       <span style="font-weight:700;color:var(--muted)">🎯 场景:</span>
@@ -1114,9 +1123,8 @@
 
     <!-- 实用工具动作 -->
     <button class="btn sm-btn" title="批量对所有服务的主机发起 SSH 握手并检测延迟" onclick="testAllConnections()">🔌 批量探测连通</button>
-    <input type="file" id="import-file-input" accept=".json,.yaml,.yml" style="display:none" onchange="handleImportFile(event)">
-    <button class="btn sm-btn" title="从本地 JSON/YAML 文件导入配置" onclick="document.getElementById('import-file-input').click()">⬆ 导入</button>
-    <button class="btn sm-btn" title="导出当前配置为 JSON 文件" onclick="exportConfig()">⬇ 导出</button>
+    <button class="btn sm-btn" title="导入配置文件，支持平滑导入旧配置到默认空间或指定空间" onclick="openImportModal()">⬆ 导入</button>
+    <button class="btn sm-btn" title="导出当前工作空间配置为 JSON 文件" onclick="exportConfig()">⬇ 导出</button>
     <button class="btn sm-btn" title="保存当前配置到磁盘 (Ctrl+S)" onclick="saveConfig()">💾 保存</button>
 
     <!-- 醒目一键部署按钮 (Primary CTA) -->
@@ -1206,12 +1214,63 @@
     </div>
   </div>
 
+  <!-- 模态导入配置文件框 (Import Modal) -->
+  <div class="modal-backdrop" id="import-modal" onclick="if(event.target===this) closeImportModal()">
+    <div class="picker-card" style="width: min(540px, 94vw);">
+      <div class="pc-head">
+        <div class="pc-title"><span>📂</span> 导入部署配置文件</div>
+        <button class="pc-close" onclick="closeImportModal()">✕</button>
+      </div>
+      <div class="pc-body" style="padding: 18px 22px; display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <label style="display:block; font-size:12.5px; font-weight:700; margin-bottom:6px; color:var(--text)">选择本地配置文件 (.json / .yaml / .yml)</label>
+          <input type="file" id="modal-import-file-input" accept=".json,.yaml,.yml" class="form-input" style="width:100%; padding: 6px 10px;" onchange="onImportFileSelected(event)">
+          <div id="import-file-preview" style="margin-top:8px; font-size:11.5px; color:var(--muted); line-height: 1.5;">请选择需要导入的文件</div>
+        </div>
+
+        <div>
+          <label style="display:block; font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text)">导入目标工作空间</label>
+          <div style="display:flex; flex-direction:column; gap:10px; background:var(--panel-2); padding:12px 14px; border-radius:8px; border:1px solid var(--border);">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="import-target-radio" value="default" checked onchange="onImportTargetRadioChange()">
+              <span><strong>导入到默认工作空间 (default)</strong> <span style="color:var(--accent);font-size:11px;">(推荐：平滑迁移旧版配置)</span></span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="import-target-radio" value="current" onchange="onImportTargetRadioChange()">
+              <span>覆盖当前工作空间 (<span id="import-current-ws-label" style="font-weight:700;color:var(--accent);">default</span>)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+              <input type="radio" name="import-target-radio" value="new" onchange="onImportTargetRadioChange()">
+              <span>作为全新独立工作空间导入</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="import-new-ws-group" style="display:none;">
+          <label style="display:block; font-size:12.5px; font-weight:700; margin-bottom:6px; color:var(--text)">新工作空间唯一标识 (ID)</label>
+          <input type="text" id="import-new-ws-id" class="form-input" placeholder="例如：staging 或 prod-cluster" style="width:100%;">
+          <div style="font-size:11px; color:var(--muted); margin-top:4px;">仅允许英文、数字、下划线、短横线及中文</div>
+        </div>
+      </div>
+      <div class="pc-foot">
+        <div></div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn sm-btn" onclick="closeImportModal()">取消</button>
+          <button class="btn sm-btn primary" id="btn-confirm-import" onclick="confirmImportConfig()" disabled>确认导入并保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <datalist id="existing-groups-dl"></datalist>
   <div class="toast-msg" id="toast-msg"></div>
 
 <script>
   /* ===== 核心状态管理 ===== */
   let deployConfig = { parallel: true, hooks: {}, groups: [], scenarios: [], services: [] };
+  let currentWorkspace = 'default';
+  let workspacesList = [];
+  let pendingImportConfig = null;
   let currentIndex = -1;
   let isGlobalView = false;
   let currentGroupView = null;
@@ -1293,8 +1352,9 @@
   };
 
   /* ===== 初始化与键盘快捷键 ===== */
-  window.addEventListener('DOMContentLoaded', () => {
-    loadConfig();
+  window.addEventListener('DOMContentLoaded', async () => {
+    await loadWorkspaces();
+    await loadConfig();
     setupKeyBindings();
     setupTerminalScroll();
   });
@@ -1318,6 +1378,11 @@
       }
       // Esc 关闭弹窗或收起全屏终端
       if (e.key === 'Escape') {
+        const importModal = document.getElementById('import-modal');
+        if (importModal && importModal.classList.contains('show')) {
+          closeImportModal();
+          return;
+        }
         const pickerModal = document.getElementById('picker-modal');
         if (pickerModal && pickerModal.classList.contains('show')) {
           closePicker();
@@ -1390,7 +1455,7 @@
   /* ===== 加载与更新配置 ===== */
   async function loadConfig() {
     try {
-      const resp = await fetch('/api/config');
+      const resp = await fetch(`/api/config?workspace=${encodeURIComponent(currentWorkspace)}`);
       if (!resp.ok) throw new Error(await resp.text());
       deployConfig = await resp.json();
       if (!Array.isArray(deployConfig.services)) deployConfig.services = [];
@@ -2505,12 +2570,12 @@
 
   async function saveConfig() {
     try {
-      const resp = await fetch('/api/config', {
+      const resp = await fetch(`/api/config?workspace=${encodeURIComponent(currentWorkspace)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: snapshot()
       });
       if (!resp.ok) throw new Error(await resp.text());
       markClean();
-      showToast('✅ 配置已安全保存到 deploy.json');
+      showToast(`✅ 配置已安全保存至 [${currentWorkspace}] 工作空间`);
     } catch (err) {
       showToast('保存失败: ' + err.message, 'error');
     }
@@ -2519,35 +2584,249 @@
   function exportConfig() {
     const a = document.createElement('a');
     a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(snapshot());
-    a.download = 'deploy.json';
+    a.download = currentWorkspace === 'default' ? 'deploy.json' : `deploy-${currentWorkspace}.json`;
     a.click();
   }
 
-  function handleImportFile(event) {
+  /* ===== 工作空间 (Workspaces) 管理逻辑 ===== */
+  async function loadWorkspaces() {
+    try {
+      const resp = await fetch('/api/workspaces');
+      if (!resp.ok) throw new Error(await resp.text());
+      const data = await resp.json();
+      workspacesList = data.workspaces || [];
+      if (data.active) currentWorkspace = data.active;
+      renderWorkspaceSelect();
+    } catch (err) {
+      console.error('Failed to load workspaces:', err);
+    }
+  }
+
+  function renderWorkspaceSelect() {
+    const sel = document.getElementById('workspace-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    workspacesList.forEach(ws => {
+      const opt = document.createElement('option');
+      opt.value = ws.id;
+      opt.textContent = `${ws.isDefault ? '🌟 ' : '📁 '}${ws.name}`;
+      if (ws.id === currentWorkspace) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    const curLabel = document.getElementById('import-current-ws-label');
+    if (curLabel) curLabel.textContent = currentWorkspace;
+  }
+
+  async function onWorkspaceSelectChange(targetWs) {
+    if (targetWs === currentWorkspace) return;
+    if (isDirty()) {
+      if (!confirm('当前工作空间有未保存的修改，切换空间将放弃未保存更改，是否继续？')) {
+        renderWorkspaceSelect();
+        return;
+      }
+    }
+    try {
+      const resp = await fetch('/api/workspaces/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace: targetWs })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: '切换失败' }));
+        throw new Error(err.error || '切换失败');
+      }
+      currentWorkspace = targetWs;
+      showToast(`已切换至工作空间: ${targetWs}`);
+      await loadWorkspaces();
+      await loadConfig();
+    } catch (err) {
+      showToast(`切换工作空间失败: ${err.message}`, 'error');
+      renderWorkspaceSelect();
+    }
+  }
+
+  function openWorkspaceActionMenu() {
+    const isDef = currentWorkspace === 'default';
+    const action = prompt(
+      `当前工作空间: [${currentWorkspace}]\n` +
+      `请选择操作序号：\n` +
+      `1 - ➕ 新建独立工作空间\n` +
+      `2 - 📋 复制当前空间为新空间\n` +
+      (isDef ? `(默认空间受保护不可删除)` : `3 - 🗑️ 删除当前工作空间 [${currentWorkspace}]`)
+    );
+    if (!action) return;
+    const trimmed = action.trim();
+    if (trimmed === '1') {
+      openNewWorkspaceModal(false);
+    } else if (trimmed === '2') {
+      openNewWorkspaceModal(true);
+    } else if (trimmed === '3') {
+      deleteCurrentWorkspace();
+    }
+  }
+
+  function openNewWorkspaceModal(copyFromCurrent) {
+    const id = prompt('请输入新工作空间唯一标识 ID (仅英文/数字/下划线/短横线/中文):');
+    if (!id) return;
+    const cleanId = id.trim();
+    if (!cleanId) return;
+    createWorkspace(cleanId, cleanId, copyFromCurrent ? currentWorkspace : 'empty');
+  }
+
+  async function createWorkspace(id, name, from) {
+    try {
+      const resp = await fetch('/api/workspaces/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, from })
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      currentWorkspace = id;
+      showToast(`✅ 成功创建并切换至工作空间: ${id}`);
+      await loadWorkspaces();
+      await loadConfig();
+    } catch (err) {
+      showToast(`创建工作空间失败: ${err.message}`, 'error');
+    }
+  }
+
+  async function deleteCurrentWorkspace() {
+    if (currentWorkspace === 'default') {
+      alert('默认工作空间 (default) 为系统受保护基线，禁止删除！');
+      return;
+    }
+    if (!confirm(`确定要彻底删除工作空间 [${currentWorkspace}] 及其独立配置文件吗？此操作不可逆！`)) {
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/workspaces?id=${encodeURIComponent(currentWorkspace)}`, {
+        method: 'DELETE'
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      showToast(`工作空间 [${currentWorkspace}] 已删除，已自动切回默认工作空间`);
+      currentWorkspace = 'default';
+      await loadWorkspaces();
+      await loadConfig();
+    } catch (err) {
+      showToast(`删除工作空间失败: ${err.message}`, 'error');
+    }
+  }
+
+  /* ===== 导入配置文件与目标工作空间路由 ===== */
+  function openImportModal() {
+    pendingImportConfig = null;
+    const fileInput = document.getElementById('modal-import-file-input');
+    if (fileInput) fileInput.value = '';
+    document.getElementById('import-file-preview').innerHTML = '请选择需要导入的配置文件 (.json / .yaml / .yml)';
+    document.getElementById('btn-confirm-import').disabled = true;
+    
+    // 默认选中导入到 default 空间（平滑迁移旧配置的核心入口）
+    const radioDefault = document.querySelector('input[name="import-target-radio"][value="default"]');
+    if (radioDefault) radioDefault.checked = true;
+    onImportTargetRadioChange();
+
+    const curLabel = document.getElementById('import-current-ws-label');
+    if (curLabel) curLabel.textContent = currentWorkspace;
+
+    document.getElementById('import-modal').classList.add('show');
+  }
+
+  function closeImportModal() {
+    document.getElementById('import-modal').classList.remove('show');
+    pendingImportConfig = null;
+  }
+
+  function onImportTargetRadioChange() {
+    const checkedRadio = document.querySelector('input[name="import-target-radio"]:checked');
+    const val = checkedRadio ? checkedRadio.value : 'default';
+    const newGroup = document.getElementById('import-new-ws-group');
+    if (newGroup) {
+      newGroup.style.display = val === 'new' ? 'block' : 'none';
+    }
+  }
+
+  function onImportFileSelected(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
       try {
-        const parsed = JSON.parse(e.target.result);
-        if (!parsed || typeof parsed !== 'object') throw new Error('无效的 JSON 配置文件');
-        deployConfig = parsed;
-        if (!Array.isArray(deployConfig.services)) deployConfig.services = [];
-        if (!Array.isArray(deployConfig.groups)) deployConfig.groups = [];
-        if (!Array.isArray(deployConfig.scenarios)) deployConfig.scenarios = [];
-        if (!deployConfig.hooks) deployConfig.hooks = {};
-        currentIndex = deployConfig.services.length ? 0 : -1;
-        isGlobalView = deployConfig.services.length === 0;
-        updateScenarioDropdown();
-        renderAll();
-        notifyChange();
-        showToast('✅ 配置文件导入成功，请核对并点击保存！');
+        const text = e.target.result;
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (_) {
+          throw new Error('当前前端仅直接解析 JSON，YAML 格式请先转为 JSON 或使用 CLI 导入');
+        }
+
+        if (!parsed || typeof parsed !== 'object') throw new Error('无效的配置文件结构');
+        if (!Array.isArray(parsed.services)) parsed.services = [];
+        if (!Array.isArray(parsed.groups)) parsed.groups = [];
+        if (!Array.isArray(parsed.scenarios)) parsed.scenarios = [];
+        if (!parsed.hooks) parsed.hooks = {};
+        pendingImportConfig = parsed;
+
+        document.getElementById('import-file-preview').innerHTML =
+          `✅ 成功解析文件: <strong>${escapeHtml(file.name)}</strong> (包含 <strong>${parsed.services.length}</strong> 个服务单元, <strong>${parsed.groups.length}</strong> 个业务分组)`;
+        document.getElementById('btn-confirm-import').disabled = false;
       } catch (err) {
-        showToast('导入解析失败: ' + err.message, 'error');
+        document.getElementById('import-file-preview').innerHTML = `<span style="color:var(--danger)">❌ 解析失败: ${escapeHtml(err.message)}</span>`;
+        document.getElementById('btn-confirm-import').disabled = true;
+        pendingImportConfig = null;
       }
-      event.target.value = '';
     };
     reader.readAsText(file);
+  }
+
+  async function confirmImportConfig() {
+    if (!pendingImportConfig) {
+      showToast('未选择或解析成功任何配置文件', 'error');
+      return;
+    }
+
+    const mode = document.querySelector('input[name="import-target-radio"]:checked').value;
+    let targetWs = 'default';
+
+    if (mode === 'default') {
+      targetWs = 'default';
+    } else if (mode === 'current') {
+      targetWs = currentWorkspace;
+    } else if (mode === 'new') {
+      const newIdInput = document.getElementById('import-new-ws-id');
+      const newId = newIdInput ? newIdInput.value.trim() : '';
+      if (!newId) {
+        alert('请输入新工作空间唯一标识 ID');
+        return;
+      }
+      targetWs = newId;
+    }
+
+    try {
+      const resp = await fetch(`/api/config?workspace=${encodeURIComponent(targetWs)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pendingImportConfig, null, 2)
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+
+      closeImportModal();
+      showToast(`🎉 配置文件已成功导入并保存至 [${targetWs}] 工作空间！`);
+
+      // 自动切换为刚导入的目标工作空间
+      if (targetWs !== currentWorkspace) {
+        await fetch('/api/workspaces/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace: targetWs })
+        });
+        currentWorkspace = targetWs;
+      }
+
+      await loadWorkspaces();
+      await loadConfig();
+    } catch (err) {
+      showToast(`导入保存失败: ${err.message}`, 'error');
+    }
   }
 
   /* ===== 底部终端抽屉控制 ===== */

@@ -418,4 +418,143 @@ func TestHandlePickPathMethodGuard(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEndpointsAndImportToDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	wsDir := filepath.Join(tmpDir, "test_workspaces")
+	configPath := filepath.Join(tmpDir, "deploy.json")
+
+	// 准备一个旧版配置文件
+	legacyCfg := `{
+		"parallel": true,
+		"services": [
+			{
+				"name": "legacy-service-node",
+				"server": {
+					"host": "192.168.1.100",
+					"username": "admin",
+					"password": "old_secret_pwd"
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(legacyCfg), 0644); err != nil {
+		t.Fatalf("failed to write legacy config: %v", err)
+	}
+
+	srv := NewServer(":0", configPath)
+	srv.workspaceDir = wsDir
+	_ = config.EnsureWorkspaceDir(wsDir, configPath)
+
+	// 1. GET /api/workspaces：应包含自动纳管的 default 工作空间
+	reqList := httptest.NewRequest(http.MethodGet, "/api/workspaces", nil)
+	wList := httptest.NewRecorder()
+	srv.handleWorkspaces(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("expected 200 for list workspaces, got %d", wList.Code)
+	}
+	var listResp struct {
+		Workspaces []config.WorkspaceInfo `json:"workspaces"`
+		Active     string                 `json:"active"`
+	}
+	if err := json.Unmarshal(wList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("failed to parse workspaces json: %v", err)
+	}
+	if len(listResp.Workspaces) == 0 || listResp.Workspaces[0].ID != config.DefaultWorkspaceID {
+		t.Fatalf("expected default workspace in list, got %+v", listResp.Workspaces)
+	}
+	if listResp.Active != config.DefaultWorkspaceID {
+		t.Fatalf("expected active to be default, got %s", listResp.Active)
+	}
+
+	// 2. 检查 default 空间是否已包含旧配置的 legacy-service-node
+	reqGetDef := httptest.NewRequest(http.MethodGet, "/api/config?workspace=default", nil)
+	wGetDef := httptest.NewRecorder()
+	srv.handleConfig(wGetDef, reqGetDef)
+	if wGetDef.Code != http.StatusOK {
+		t.Fatalf("expected 200 for get default config, got %d", wGetDef.Code)
+	}
+	if !strings.Contains(wGetDef.Body.String(), "legacy-service-node") {
+		t.Errorf("expected default workspace to contain legacy-service-node")
+	}
+
+	// 3. POST /api/workspaces/create 创建新空间 staging
+	createPayload := `{"id":"staging","name":"预发布环境","from":"empty"}`
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/workspaces/create", strings.NewReader(createPayload))
+	wCreate := httptest.NewRecorder()
+	srv.handleWorkspaceCreate(wCreate, reqCreate)
+	if wCreate.Code != http.StatusOK {
+		t.Fatalf("expected 200 for workspace create, got %d: %s", wCreate.Code, wCreate.Body.String())
+	}
+	if srv.getCurrentWorkspace() != "staging" {
+		t.Errorf("expected current workspace to switch to staging, got %s", srv.getCurrentWorkspace())
+	}
+
+	// 4. 在当前处于 staging 状态下，向 default 空间导入/更新新的老配置
+	importedJSON := `{
+		"parallel": false,
+		"services": [
+			{
+				"name": "imported-to-default-app",
+				"server": {
+					"host": "192.168.1.200",
+					"username": "root",
+					"password": "new_imported_secret"
+				}
+			}
+		]
+	}`
+	reqImportToDefault := httptest.NewRequest(http.MethodPost, "/api/config?workspace=default", strings.NewReader(importedJSON))
+	wImportToDefault := httptest.NewRecorder()
+	srv.handleConfig(wImportToDefault, reqImportToDefault)
+	if wImportToDefault.Code != http.StatusOK {
+		t.Fatalf("expected 200 for import to default workspace, got %d: %s", wImportToDefault.Code, wImportToDefault.Body.String())
+	}
+
+	// 校验 default 空间确实保存了导入的配置
+	reqCheckDef := httptest.NewRequest(http.MethodGet, "/api/config?workspace=default", nil)
+	wCheckDef := httptest.NewRecorder()
+	srv.handleConfig(wCheckDef, reqCheckDef)
+	if !strings.Contains(wCheckDef.Body.String(), "imported-to-default-app") {
+		t.Errorf("expected default workspace to have imported-to-default-app")
+	}
+
+	// 5. POST /api/workspaces/select 切换回 default
+	selectPayload := `{"workspace":"default"}`
+	reqSelect := httptest.NewRequest(http.MethodPost, "/api/workspaces/select", strings.NewReader(selectPayload))
+	wSelect := httptest.NewRecorder()
+	srv.handleWorkspaceSelect(wSelect, reqSelect)
+	if wSelect.Code != http.StatusOK {
+		t.Fatalf("expected 200 for select workspace, got %d", wSelect.Code)
+	}
+	if srv.getCurrentWorkspace() != "default" {
+		t.Errorf("expected current workspace to be default, got %s", srv.getCurrentWorkspace())
+	}
+
+	// 6. 部署并发中禁止切换工作空间
+	srv.isDeploying.Store(true)
+	reqSelectConflict := httptest.NewRequest(http.MethodPost, "/api/workspaces/select", strings.NewReader(`{"workspace":"staging"}`))
+	wSelectConflict := httptest.NewRecorder()
+	srv.handleWorkspaceSelect(wSelectConflict, reqSelectConflict)
+	if wSelectConflict.Code != http.StatusConflict {
+		t.Errorf("expected 409 conflict when switching during deployment, got %d", wSelectConflict.Code)
+	}
+	srv.isDeploying.Store(false)
+
+	// 7. DELETE /api/workspaces：禁止删除 default
+	reqDelDefault := httptest.NewRequest(http.MethodDelete, "/api/workspaces?id=default", nil)
+	wDelDefault := httptest.NewRecorder()
+	srv.handleWorkspaces(wDelDefault, reqDelDefault)
+	if wDelDefault.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when deleting default workspace, got %d", wDelDefault.Code)
+	}
+
+	// 删除 staging 空间成功
+	reqDelStaging := httptest.NewRequest(http.MethodDelete, "/api/workspaces?id=staging", nil)
+	wDelStaging := httptest.NewRecorder()
+	srv.handleWorkspaces(wDelStaging, reqDelStaging)
+	if wDelStaging.Code != http.StatusOK {
+		t.Errorf("expected 200 when deleting staging workspace, got %d", wDelStaging.Code)
+	}
+}
+
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -60,11 +61,14 @@ func (h *SSEHub) Broadcast(msg string) {
 
 // Server Web 管理服务
 type Server struct {
-	configPath   string
-	addr         string
-	isDeploying  atomic.Bool
-	deployMu     sync.Mutex
-	deployCancel context.CancelFunc
+	configPath       string
+	workspaceDir     string
+	currentWorkspace string
+	wsMu             sync.RWMutex
+	addr             string
+	isDeploying      atomic.Bool
+	deployMu         sync.Mutex
+	deployCancel     context.CancelFunc
 }
 
 // NewServer 创建 Web 服务器
@@ -72,10 +76,65 @@ func NewServer(addr, configPath string) *Server {
 	if configPath == "" {
 		configPath = "deploy.json"
 	}
-	return &Server{
-		addr:       addr,
-		configPath: configPath,
+	baseDir := filepath.Dir(configPath)
+	wsDir := filepath.Join(baseDir, config.DefaultWorkspaceDir)
+	if baseDir == "." || baseDir == "" {
+		wsDir = config.DefaultWorkspaceDir
 	}
+	// 确保工作空间目录存在并自动平滑迁移/纳管已有配置到默认工作空间
+	_ = config.EnsureWorkspaceDir(wsDir, configPath)
+
+	return &Server{
+		addr:             addr,
+		configPath:       configPath,
+		workspaceDir:     wsDir,
+		currentWorkspace: config.DefaultWorkspaceID,
+	}
+}
+
+// getCurrentWorkspace 安全获取当前活动工作空间ID
+func (s *Server) getCurrentWorkspace() string {
+	s.wsMu.RLock()
+	defer s.wsMu.RUnlock()
+	if s.currentWorkspace == "" {
+		return config.DefaultWorkspaceID
+	}
+	return s.currentWorkspace
+}
+
+// SetCurrentWorkspace 安全切换当前活动工作空间ID
+func (s *Server) SetCurrentWorkspace(ws string) {
+	s.setCurrentWorkspace(ws)
+}
+
+// setCurrentWorkspace 安全切换当前活动工作空间ID
+func (s *Server) setCurrentWorkspace(ws string) {
+	s.wsMu.Lock()
+	defer s.wsMu.Unlock()
+	s.currentWorkspace = ws
+}
+
+// resolveWorkspacePath 根据 HTTP 请求中的 Query/Header 或当前活动上下文解析目标工作空间路径与ID
+func (s *Server) resolveWorkspacePath(r *http.Request) (string, string) {
+	ws := ""
+	if r != nil {
+		ws = strings.TrimSpace(r.URL.Query().Get("workspace"))
+		if ws == "" {
+			ws = strings.TrimSpace(r.Header.Get("X-Workspace-ID"))
+		}
+	}
+	if ws == "" {
+		ws = s.getCurrentWorkspace()
+	}
+	if !config.IsValidWorkspaceID(ws) {
+		ws = config.DefaultWorkspaceID
+	}
+
+	wsPath, err := config.GetWorkspacePath(s.workspaceDir, ws)
+	if err != nil {
+		return s.configPath, ws
+	}
+	return wsPath, ws
 }
 
 // Start 启动 HTTP 服务器并注册路由（向后兼容）
@@ -100,13 +159,16 @@ func (s *Server) StartContext(ctx context.Context, autoOpen bool) error {
 	fileServer := http.FileServer(http.FS(subFS))
 	mux.Handle("/", fileServer)
 
-		// API 路由
-		mux.HandleFunc("/api/config", s.handleConfig)
-		mux.HandleFunc("/api/deploy", s.handleDeploy)
-		mux.HandleFunc("/api/deploy/cancel", s.handleDeployCancel)
-		mux.HandleFunc("/api/server/test-connect", s.handleTestConnect)
-		mux.HandleFunc("/api/system/pick-path", s.handlePickPath)
-		mux.HandleFunc("/api/deploy/events", s.handleSSE)
+	// API 路由
+	mux.HandleFunc("/api/workspaces", s.handleWorkspaces)
+	mux.HandleFunc("/api/workspaces/select", s.handleWorkspaceSelect)
+	mux.HandleFunc("/api/workspaces/create", s.handleWorkspaceCreate)
+	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/deploy", s.handleDeploy)
+	mux.HandleFunc("/api/deploy/cancel", s.handleDeployCancel)
+	mux.HandleFunc("/api/server/test-connect", s.handleTestConnect)
+	mux.HandleFunc("/api/system/pick-path", s.handlePickPath)
+	mux.HandleFunc("/api/deploy/events", s.handleSSE)
 
 	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -148,16 +210,188 @@ func (s *Server) StartContext(ctx context.Context, autoOpen bool) error {
 	return err
 }
 
-// handleConfig GET 获取当前配置（脱敏处理），POST 保存更新配置（保留未修改的凭证与环境变量占位符）
+// handleWorkspaces 获取所有工作空间列表 (GET) 或删除工作空间 (DELETE)
+func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := config.ListWorkspaces(s.workspaceDir)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to list workspaces: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if len(list) == 0 {
+			_ = config.EnsureWorkspaceDir(s.workspaceDir, s.configPath)
+			list, _ = config.ListWorkspaces(s.workspaceDir)
+		}
+		active := s.getCurrentWorkspace()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"workspaces": list,
+			"active":     active,
+		})
+
+	case http.MethodDelete:
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			id = strings.TrimSpace(r.URL.Query().Get("name"))
+		}
+		if id == "" {
+			http.Error(w, "missing workspace id", http.StatusBadRequest)
+			return
+		}
+		if err := config.DeleteWorkspace(s.workspaceDir, id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if s.getCurrentWorkspace() == id {
+			s.setCurrentWorkspace(config.DefaultWorkspaceID)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "ok",
+			"active": s.getCurrentWorkspace(),
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleWorkspaceSelect 切换当前活动工作空间
+func (s *Server) handleWorkspaceSelect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.isDeploying.Load() {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "Cannot switch workspace while deployment is running.",
+		})
+		return
+	}
+
+	var req struct {
+		Workspace string `json:"workspace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "JSON parse error", http.StatusBadRequest)
+		return
+	}
+
+	id := strings.TrimSpace(req.Workspace)
+	if !config.IsValidWorkspaceID(id) {
+		http.Error(w, "invalid workspace id", http.StatusBadRequest)
+		return
+	}
+
+	targetPath, err := config.GetWorkspacePath(s.workspaceDir, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := os.Stat(targetPath); err != nil {
+		http.Error(w, fmt.Sprintf("workspace %q does not exist", id), http.StatusNotFound)
+		return
+	}
+
+	s.setCurrentWorkspace(id)
+	logger.System("Active workspace switched to %q (%s)", id, targetPath)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
+		"active": id,
+	})
+}
+
+// handleWorkspaceCreate 新建工作空间
+func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		From string `json:"from"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "JSON parse error", http.StatusBadRequest)
+		return
+	}
+
+	id := strings.TrimSpace(req.ID)
+	if !config.IsValidWorkspaceID(id) {
+		http.Error(w, "invalid workspace id (only letters, numbers, hyphen, underscore allowed)", http.StatusBadRequest)
+		return
+	}
+
+	var baseCfg *config.DeployConfig
+	if req.From != "empty" {
+		fromID := strings.TrimSpace(req.From)
+		if fromID == "" {
+			fromID = s.getCurrentWorkspace()
+		}
+		fromPath, err := config.GetWorkspacePath(s.workspaceDir, fromID)
+		if err == nil {
+			if loaded, err := config.LoadRawConfig(fromPath); err == nil {
+				baseCfg = loaded
+			}
+		}
+	}
+
+	info, err := config.CreateWorkspace(s.workspaceDir, id, req.Name, baseCfg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.setCurrentWorkspace(id)
+	logger.Success("Created and switched to new workspace: %s", id)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(info)
+}
+
+// handleConfig GET 获取配置（脱敏处理），POST 保存更新配置（保留未修改的凭证与环境变量占位符）
+// 支持 URL query 参数 ?workspace=xxx 指定目标工作空间，缺省使用当前活动空间
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	cfgPath, wsID := s.resolveWorkspacePath(r)
+
 	switch r.Method {
 	case http.MethodGet:
 		var cfg *config.DeployConfig
-		if _, err := os.Stat(s.configPath); err == nil {
-			// 加载未展开环境变量的原始配置，防止向网络前端暴露敏感凭证
-			loaded, err := config.LoadRawConfig(s.configPath)
-			if err == nil {
-				cfg = loaded
+		// 如果是默认空间，检查 s.configPath 与 cfgPath
+		if wsID == config.DefaultWorkspaceID && s.configPath != "" {
+			statRoot, errRoot := os.Stat(s.configPath)
+			statWs, errWs := os.Stat(cfgPath)
+			if errRoot == nil && (errWs != nil || statRoot.ModTime().After(statWs.ModTime())) {
+				if loaded, err := config.LoadRawConfig(s.configPath); err == nil {
+					cfg = loaded
+					// 同步写入 cfgPath 保持一致
+					if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+						_ = os.WriteFile(cfgPath, data, 0644)
+					}
+				}
+			}
+		}
+
+		if cfg == nil {
+			if _, err := os.Stat(cfgPath); err == nil {
+				// 加载未展开环境变量的原始配置，防止向网络前端暴露敏感凭证
+				loaded, err := config.LoadRawConfig(cfgPath)
+				if err == nil {
+					cfg = loaded
+				}
+			} else if _, err := os.Stat(s.configPath); err == nil {
+				// 回退尝试加载初始配置文件
+				loaded, err := config.LoadRawConfig(s.configPath)
+				if err == nil {
+					cfg = loaded
+				}
 			}
 		}
 
@@ -169,6 +403,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		maskedCfg := config.MaskConfig(cfg)
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("X-Workspace-ID", wsID)
 		_ = json.NewEncoder(w).Encode(maskedCfg)
 
 	case http.MethodPost:
@@ -178,11 +413,22 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 若磁盘存在旧配置，当且仅当提交的值为掩码或空时保留原配置中的密码/环境变量占位符
-		if _, err := os.Stat(s.configPath); err == nil {
-			if origCfg, err := config.LoadRawConfig(s.configPath); err == nil {
-				config.MergePreservingSecrets(&newCfg, origCfg)
+		// 若目标工作空间磁盘存在旧配置，当且仅当提交的值为掩码或空时保留原配置中的密码/环境变量占位符
+		var origCfg *config.DeployConfig
+		if _, err := os.Stat(cfgPath); err == nil {
+			if loaded, err := config.LoadRawConfig(cfgPath); err == nil {
+				origCfg = loaded
 			}
+		}
+		if origCfg == nil && s.configPath != "" {
+			if _, err := os.Stat(s.configPath); err == nil {
+				if loaded, err := config.LoadRawConfig(s.configPath); err == nil {
+					origCfg = loaded
+				}
+			}
+		}
+		if origCfg != nil {
+			config.MergePreservingSecrets(&newCfg, origCfg)
 		}
 
 		if err := config.ValidateAndNormalize(&newCfg); err != nil {
@@ -196,14 +442,22 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := os.WriteFile(s.configPath, data, 0644); err != nil {
+		if err := os.WriteFile(cfgPath, data, 0644); err != nil {
 			http.Error(w, fmt.Sprintf("Write file error: %v", err), http.StatusInternalServerError)
 			return
 		}
 
+		// 若操作的是 default 空间，同步更新根目录下的 deploy.json 保证双向一致
+		if wsID == config.DefaultWorkspaceID && s.configPath != "" {
+			_ = os.WriteFile(s.configPath, data, 0644)
+		}
+
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "ok",
+			"workspace": wsID,
+		})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -227,14 +481,8 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := config.LoadConfig(s.configPath)
-	if err != nil {
-		s.isDeploying.Store(false)
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	var req struct {
+		Workspace      string   `json:"workspace,omitempty"`
 		Scenario       string   `json:"scenario,omitempty"`
 		TargetGroups   []string `json:"targetGroups,omitempty"`
 		TargetTypes    []string `json:"targetTypes,omitempty"`
@@ -243,6 +491,35 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		MaxWorkers     *int     `json:"maxWorkers,omitempty"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	cfgPath, wsID := s.resolveWorkspacePath(r)
+	if req.Workspace != "" && config.IsValidWorkspaceID(req.Workspace) {
+		if customPath, err := config.GetWorkspacePath(s.workspaceDir, req.Workspace); err == nil {
+			if _, err := os.Stat(customPath); err == nil {
+				cfgPath = customPath
+				wsID = req.Workspace
+			}
+		}
+	}
+
+	var cfg *config.DeployConfig
+	var err error
+	if _, statErr := os.Stat(cfgPath); statErr == nil {
+		cfg, err = config.LoadConfig(cfgPath)
+	} else if wsID == config.DefaultWorkspaceID && s.configPath != "" {
+		if _, statErr := os.Stat(s.configPath); statErr == nil {
+			cfg, err = config.LoadConfig(s.configPath)
+		}
+	}
+
+	if cfg == nil {
+		if err == nil {
+			err = fmt.Errorf("configuration file not found for workspace %q", wsID)
+		}
+		s.isDeploying.Store(false)
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	maxWorkers := 10
 	if req.MaxWorkers != nil && *req.MaxWorkers > 0 {
@@ -264,9 +541,11 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	s.deployCancel = cancel
 	s.deployMu.Unlock()
 
+	logger.System("Triggered deployment on workspace [%s] (%s)", wsID, cfgPath)
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"started"}`))
+	_, _ = w.Write([]byte(`{"status":"started","workspace":"` + wsID + `"}`))
 
 	// 异步启动部署
 	go func() {
@@ -335,11 +614,14 @@ func (s *Server) handleDeployCancel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		targetServer := req.Server
-		// 如果密码或 passphrase 带有掩码，尝试从既有配置继承原真实密码
-		if targetServer.Password == config.MaskSecret || targetServer.Passphrase == config.MaskSecret || (targetServer.Password == "" && targetServer.PrivateKeyPath == "") {
-			if _, err := os.Stat(s.configPath); err == nil {
-				if origCfg, err := config.LoadConfig(s.configPath); err == nil {
+	targetServer := req.Server
+	// 如果密码或 passphrase 带有掩码，尝试从既有配置继承原真实密码
+	if targetServer.Password == config.MaskSecret || targetServer.Passphrase == config.MaskSecret || (targetServer.Password == "" && targetServer.PrivateKeyPath == "") {
+		cfgPath, _ := s.resolveWorkspacePath(r)
+		checkPaths := []string{cfgPath, s.configPath}
+		for _, p := range checkPaths {
+			if _, err := os.Stat(p); err == nil {
+				if origCfg, err := config.LoadConfig(p); err == nil {
 					for _, svc := range origCfg.Services {
 						if (req.ServiceName != "" && strings.EqualFold(svc.Name, req.ServiceName)) ||
 							(strings.EqualFold(svc.Server.Host, targetServer.Host) && svc.Server.Port == targetServer.Port && svc.Server.Username == targetServer.Username) {
@@ -356,8 +638,12 @@ func (s *Server) handleDeployCancel(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 				}
+				if targetServer.Password != config.MaskSecret && targetServer.Password != "" {
+					break
+				}
 			}
 		}
+	}
 
 		// 环境变量展开
 		targetServer.Host = os.ExpandEnv(targetServer.Host)
