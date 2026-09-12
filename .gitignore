@@ -22,3 +22,6 @@ workspaces/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Agent tool state
+.workbuddy/

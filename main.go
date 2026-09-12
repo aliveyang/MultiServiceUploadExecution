@@ -126,6 +126,15 @@ func main() {
 			if resolvedConfig == "" {
 				resolvedConfig = "deploy.json"
 			}
+
+			// settings.json 中的监听地址仅在用户未显式指定 -addr 时生效（默认值恒为回环 127.0.0.1:8080）
+			if st, err := config.LoadSettings(config.ResolveWorkspaceDir(resolvedConfig)); err == nil && st != nil {
+				if strings.TrimSpace(st.ListenAddr) != "" && webAddr == "127.0.0.1:8080" {
+					webAddr = strings.TrimSpace(st.ListenAddr)
+					logger.System("Using listen address from settings.json: %s", webAddr)
+				}
+			}
+
 			server := web.NewServer(webAddr, resolvedConfig)
 			if workspaceStr != "" && config.IsValidWorkspaceID(workspaceStr) {
 				server.SetCurrentWorkspace(workspaceStr)

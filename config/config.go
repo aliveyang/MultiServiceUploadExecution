@@ -91,10 +91,17 @@ type UploadConfig struct {
 		Type    string       `json:"type,omitempty" yaml:"type,omitempty"`     // 部署类型: standard, exec_only, sync_only
 		Stage   int          `json:"stage,omitempty" yaml:"stage,omitempty"`   // 执行波次/阶段 (默认 1，按升序批次执行)
 		Tags    []string     `json:"tags,omitempty" yaml:"tags,omitempty"`     // 标签标识，便于多维度归类
+		HostRef string       `json:"hostRef,omitempty" yaml:"hostRef,omitempty"` // 引用主机库条目名称；内联 server 字段优先级高于库值
 		Server  ServerConfig `json:"server" yaml:"server"`
 		Upload  UploadConfig `json:"upload" yaml:"upload"`
 		Hooks   HooksConfig  `json:"hooks" yaml:"hooks"`
 		Enabled *bool        `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	}
+
+	// HostConfig 主机库条目：可被多个服务通过 HostRef 复用的连接定义
+	type HostConfig struct {
+		Name   string       `json:"name" yaml:"name"`     // 主机库唯一名称（服务 hostRef 引用该名称）
+		Server ServerConfig `json:"server" yaml:"server"` // 连接与认证定义
 	}
 
 // IsEnabled 检查服务是否启用（默认启用）
@@ -138,7 +145,66 @@ func (s *ServiceConfig) IsEnabled() bool {
 		Hooks     GlobalHooks      `json:"hooks,omitempty" yaml:"hooks,omitempty"`         // 全局批次钩子
 		Groups    []GroupConfig    `json:"groups,omitempty" yaml:"groups,omitempty"`       // 业务分组定义与分组批次钩子
 		Scenarios []ScenarioConfig `json:"scenarios,omitempty" yaml:"scenarios,omitempty"` // 预定义场景列表
+		Hosts     []HostConfig     `json:"hosts,omitempty" yaml:"hosts,omitempty"`         // 主机库：可复用的连接定义，服务经 hostRef 引用
 		Services  []ServiceConfig  `json:"services" yaml:"services"`
+	}
+
+	// FindHost 根据名称查找主机库条目（大小写不敏感）
+	func (c *DeployConfig) FindHost(name string) *HostConfig {
+		target := strings.ToLower(strings.TrimSpace(name))
+		if target == "" {
+			return nil
+		}
+		for i := range c.Hosts {
+			if strings.ToLower(c.Hosts[i].Name) == target {
+				return &c.Hosts[i]
+			}
+		}
+		return nil
+	}
+
+	// ResolveHostReferences 将服务声明的 hostRef 展开为实际连接配置：
+	// 以主机库条目为基底，服务内联 server 中的非零字段优先覆盖（保持内联覆盖语义）。
+	// 未找到引用时返回错误，避免部署期才暴露配置错误。
+	func (c *DeployConfig) ResolveHostReferences() error {
+		for i := range c.Services {
+			svc := &c.Services[i]
+			ref := strings.TrimSpace(svc.HostRef)
+			if ref == "" {
+				continue
+			}
+			host := c.FindHost(ref)
+			if host == nil {
+				return fmt.Errorf("service %q: hostRef %q not found in hosts[]", svc.Name, ref)
+			}
+			merged := host.Server
+			if svc.Server.Host != "" {
+				merged.Host = svc.Server.Host
+			}
+			if svc.Server.Port != 0 {
+				merged.Port = svc.Server.Port
+			}
+			if svc.Server.Username != "" {
+				merged.Username = svc.Server.Username
+			}
+			if svc.Server.Password != "" {
+				merged.Password = svc.Server.Password
+			}
+			if svc.Server.PrivateKeyPath != "" {
+				merged.PrivateKeyPath = svc.Server.PrivateKeyPath
+			}
+			if svc.Server.Passphrase != "" {
+				merged.Passphrase = svc.Server.Passphrase
+			}
+			if svc.Server.ConnectTimeout != 0 {
+				merged.ConnectTimeout = svc.Server.ConnectTimeout
+			}
+			if svc.Server.HostKeyFingerprint != "" {
+				merged.HostKeyFingerprint = svc.Server.HostKeyFingerprint
+			}
+			svc.Server = merged
+		}
+		return nil
 	}
 
 	// FindGroup 根据名称查找分组配置（大小写不敏感）
@@ -219,8 +285,11 @@ func LoadConfig(filePath string) (*DeployConfig, error) {
 		return nil, err
 	}
 
-	// 自动扩展敏感凭证中的 ${ENV} 环境变量
+	// 自动扩展敏感凭证中的 ${ENV} 环境变量，并展开主机库 hostRef 引用
 	ExpandEnvVariables(cfg)
+	if err := cfg.ResolveHostReferences(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -254,6 +323,17 @@ func MaskConfig(cfg *DeployConfig) *DeployConfig {
 		}
 	}
 
+	// 主机库条目中的凭证同步脱敏
+	for i := range masked.Hosts {
+		s := &masked.Hosts[i].Server
+		if strings.TrimSpace(s.Password) != "" {
+			s.Password = MaskSecret
+		}
+		if strings.TrimSpace(s.Passphrase) != "" {
+			s.Passphrase = MaskSecret
+		}
+	}
+
 	return &masked
 }
 
@@ -277,6 +357,23 @@ func MergePreservingSecrets(newCfg *DeployConfig, originalCfg *DeployConfig) {
 			}
 			if svc.Server.Passphrase == MaskSecret {
 				svc.Server.Passphrase = origServer.Passphrase
+			}
+		}
+	}
+
+	// 主机库条目凭证同步保留（前端回传掩码时恢复磁盘原值/环境变量占位符）
+	origHostMap := make(map[string]*ServerConfig)
+	for i := range originalCfg.Hosts {
+		origHostMap[originalCfg.Hosts[i].Name] = &originalCfg.Hosts[i].Server
+	}
+	for i := range newCfg.Hosts {
+		h := &newCfg.Hosts[i]
+		if origServer, exists := origHostMap[h.Name]; exists {
+			if h.Server.Password == MaskSecret {
+				h.Server.Password = origServer.Password
+			}
+			if h.Server.Passphrase == MaskSecret {
+				h.Server.Passphrase = origServer.Passphrase
 			}
 		}
 	}
@@ -323,6 +420,12 @@ func IsDangerousRemotePath(remotePath string) bool {
 			svc.Server.Password = expandEnv(svc.Server.Password)
 			svc.Server.Passphrase = expandEnv(svc.Server.Passphrase)
 			svc.Server.PrivateKeyPath = expandEnv(svc.Server.PrivateKeyPath)
+		}
+		for i := range cfg.Hosts {
+			h := &cfg.Hosts[i]
+			h.Server.Password = expandEnv(h.Server.Password)
+			h.Server.Passphrase = expandEnv(h.Server.Passphrase)
+			h.Server.PrivateKeyPath = expandEnv(h.Server.PrivateKeyPath)
 		}
 	}
 
@@ -373,17 +476,18 @@ func IsDangerousRemotePath(remotePath string) bool {
 				svc.Stage = 1
 			}
 
-			// 服务器连接校验
-			if strings.TrimSpace(svc.Server.Host) == "" {
+			// 服务器连接校验（hostRef 引用主机库的服务可省略内联连接信息，部署时由库值解析补齐）
+			ref := strings.TrimSpace(svc.HostRef)
+			if strings.TrimSpace(svc.Server.Host) == "" && ref == "" {
 				return fmt.Errorf("service %q: server.host is required", svc.Name)
 			}
 			if svc.Server.Port <= 0 {
 				svc.Server.Port = 22
 			}
-			if strings.TrimSpace(svc.Server.Username) == "" {
+			if strings.TrimSpace(svc.Server.Username) == "" && ref == "" {
 				return fmt.Errorf("service %q: server.username is required", svc.Name)
 			}
-			if strings.TrimSpace(svc.Server.Password) == "" && strings.TrimSpace(svc.Server.PrivateKeyPath) == "" {
+			if strings.TrimSpace(svc.Server.Password) == "" && strings.TrimSpace(svc.Server.PrivateKeyPath) == "" && ref == "" {
 				return fmt.Errorf("service %q: either server.password or server.privateKeyPath must be provided", svc.Name)
 			}
 			if svc.Server.ConnectTimeout <= 0 {
@@ -401,6 +505,40 @@ func IsDangerousRemotePath(remotePath string) bool {
 			}
 			if svc.Upload.CleanRemote && IsDangerousRemotePath(svc.Upload.RemotePath) {
 				return fmt.Errorf("service %q: cleanRemote is prohibited for high-risk system path %q", svc.Name, svc.Upload.RemotePath)
+			}
+		}
+
+		// 主机库校验
+		hostNames := make(map[string]bool)
+		for i := range cfg.Hosts {
+			h := &cfg.Hosts[i]
+			hName := strings.TrimSpace(h.Name)
+			if hName == "" {
+				return fmt.Errorf("host at index %d: name is required", i)
+			}
+			lowerHost := strings.ToLower(hName)
+			if hostNames[lowerHost] {
+				return fmt.Errorf("duplicate host name %q", h.Name)
+			}
+			hostNames[lowerHost] = true
+			if strings.TrimSpace(h.Server.Host) == "" {
+				return fmt.Errorf("host %q: server.host is required", h.Name)
+			}
+			if h.Server.Port <= 0 {
+				h.Server.Port = 22
+			}
+			if strings.TrimSpace(h.Server.Username) == "" {
+				return fmt.Errorf("host %q: server.username is required", h.Name)
+			}
+			if strings.TrimSpace(h.Server.Password) == "" && strings.TrimSpace(h.Server.PrivateKeyPath) == "" {
+				return fmt.Errorf("host %q: either server.password or server.privateKeyPath must be provided", h.Name)
+			}
+		}
+
+		// hostRef 引用存在性校验（防止部署期才暴露悬空引用）
+		for i := range cfg.Services {
+			if ref := strings.TrimSpace(cfg.Services[i].HostRef); ref != "" && cfg.FindHost(ref) == nil {
+				return fmt.Errorf("service %q: hostRef %q not found in hosts[]", cfg.Services[i].Name, ref)
 			}
 		}
 

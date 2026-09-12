@@ -197,3 +197,39 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o deploy main.g
 CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o deploy-mac main.go
 ```
 生成的单文件内置了 Web 静态资源，无需附带任何额外 HTML/CSS 文件夹，单个文件即可独立运行全部功能。
+
+---
+
+## 🌐 Web 控制台 API 一览
+
+Web 模式（`deploy -web`，默认监听 `127.0.0.1:8080`）内置控制台暴露以下 REST 接口，前端为单文件自包含 SPA（`web/static/index.html`，经 `embed.FS` 嵌入分发）：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/workspaces` | 列出工作空间（含当前活动空间） |
+| `POST` | `/api/workspaces/select` | 切换活动空间（部署中返回 409） |
+| `POST` | `/api/workspaces/create` | 新建空间（支持从既有空间复制或空白创建） |
+| `DELETE` | `/api/workspaces?id=` | 删除空间（默认空间禁止删除） |
+| `GET` | `/api/config` | 读取当前空间配置（密码/口令脱敏为 `******`） |
+| `POST` | `/api/config` | 保存配置（掩码值自动回填磁盘原值，写盘前全量校验） |
+| `POST` | `/api/deploy` | 触发部署批次（防重入，冲突返回 409） |
+| `POST` | `/api/deploy/cancel` | 中止当前部署批次 |
+| `GET` | `/api/deploy/events` | SSE 实时事件流：文本日志行 + 结构化批次事件（`batch_started` / `service_started` / `service_finished` / `batch_finished`） |
+| `GET` | `/api/deploy/history` | 批次部署历史列表（`?workspace=&limit=`） |
+| `GET` | `/api/deploy/history/{id}` | 单个批次详情（节点结果/波次聚合） |
+| `POST` | `/api/server/test-connect` | SSH 连通性探测（不执行远程命令，支持掩码密码继承） |
+| `GET` | `/api/system/pick-path` | 唤起操作系统原生文件/目录选择框 |
+| `GET` | `/api/keys` | 私钥库列表（仅元数据：算法 + SHA256 指纹，**永不返回私钥内容**） |
+| `POST` | `/api/keys` | 导入私钥（0600 权限落盘至 `workspaces/<空间>/keys/`） |
+| `DELETE` | `/api/keys?id=` | 删除私钥 |
+| `GET` / `POST` | `/api/settings` | 运行时设置（`settings.json`：默认并发度 / SSH 超时 / 监听地址） |
+
+> 💡 **批次历史归档**：每次部署批次结束后，批次记录与完整日志分别归档至 `workspaces/<空间>/history/batch-<批次ID>.json` 与 `.log`，批次 ID 格式为 `YYYYMMDD-HHMMSS`。
+
+> ⚠️ **安全红线**：Web 控制台默认仅绑定本地回环地址；`settings.json` 中的 `listenAddr` 修改需重启进程生效，且默认值恒为 `127.0.0.1:8080`。
+
+> 📌 **主机库**：`deploy.json` 支持顶层 `hosts[]` 定义可复用连接（`{"name":"edge-01","server":{...}}`），服务通过 `"hostRef": "edge-01"` 引用；内联 `server` 中的非零字段优先于库值。主机库凭证同样受 `******` 脱敏与环境变量插值保护。
+>
+> 📌 **断线补发**：SSE 事件流带单调序号，前端断线自动重连时经 `Last-Event-ID` 从环形缓冲（4096 条）补发缺失的日志与结构化事件。
+>
+> 📌 **空间记忆**：活动工作空间持久化于 `settings.json`，控制台重启后自动恢复上次空间。

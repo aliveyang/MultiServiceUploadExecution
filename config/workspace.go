@@ -21,6 +21,11 @@ const (
 var (
 	// workspaceIDPattern 校验工作空间ID合法性：只允许字母、数字、下划线、短横线及中文，1-64位，防御路径穿透
 	workspaceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-\x{4e00}-\x{9fa5}]{1,64}$`)
+
+	// reservedWorkspaceIDs 运行时保留的工作空间ID（与工作空间根目录下的运行时文件同名，禁止占用）
+	reservedWorkspaceIDs = map[string]bool{
+		"settings": true, // settings.json 运行时设置
+	}
 )
 
 // WorkspaceInfo 工作空间元数据
@@ -36,6 +41,9 @@ type WorkspaceInfo struct {
 func IsValidWorkspaceID(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\: *?"<>|`) {
+		return false
+	}
+	if reservedWorkspaceIDs[strings.ToLower(id)] {
 		return false
 	}
 	return workspaceIDPattern.MatchString(id)
@@ -91,6 +99,15 @@ func EnsureWorkspaceDir(workspaceDir, fallbackConfigPath string) error {
 	return nil
 }
 
+// ResolveWorkspaceDir 根据配置文件路径解析工作空间根目录（配置文件所在目录下的 workspaces/）
+func ResolveWorkspaceDir(configPath string) string {
+	baseDir := filepath.Dir(configPath)
+	if baseDir == "." || baseDir == "" {
+		return DefaultWorkspaceDir
+	}
+	return filepath.Join(baseDir, DefaultWorkspaceDir)
+}
+
 // GetWorkspacePath 获取指定工作空间配置文件的绝对/相对安全路径
 func GetWorkspacePath(workspaceDir, id string) (string, error) {
 	if strings.TrimSpace(workspaceDir) == "" {
@@ -138,6 +155,10 @@ func ListWorkspaces(workspaceDir string) ([]WorkspaceInfo, error) {
 			continue
 		}
 		name := entry.Name()
+		// 运行时设置文件不是工作空间
+		if strings.EqualFold(name, SettingsFileName) {
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".json" && ext != ".yaml" && ext != ".yml" {
 			continue

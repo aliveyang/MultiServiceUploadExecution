@@ -20,12 +20,40 @@ type DeployOptions struct {
 	TargetTypes    []string // 过滤目标类型，如 "standard", "exec_only", "sync_only"
 	Scenario       string   // 指定场景预设名称，如 "prod", "test"
 	MaxWorkers     int      // 最大并发 Worker 数量（<=0 时默认 10）
+
+	// 批次事件注入点（仅 Web 层使用；OnEvent 为 nil 时零开销，CLI 行为不变）
+	Workspace string                          // 信息性字段：随批次事件透传，用于历史归属
+	BatchID   string                          // 批次 ID；为空时由管理器自动生成
+	OnEvent   func(event string, payload any) // 批次生命周期结构化事件回调
 }
 
 // DeployManager 多服务部署管理器
 type DeployManager struct {
-	cfg     *config.DeployConfig
-	options DeployOptions
+	cfg        *config.DeployConfig
+	options    DeployOptions
+	batchID    string
+	batchStart time.Time
+}
+
+// emit 向已注册的回调发射批次生命周期事件（未注册时零开销）
+func (m *DeployManager) emit(name string, payload any) {
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(name, payload)
+	}
+}
+
+// runOne 执行单服务流水线并发射服务级开始/结束事件
+func (m *DeployManager) runOne(ctx context.Context, svc config.ServiceConfig, idx int) ServiceResult {
+	m.emit(EventServiceStarted, ServiceNodeInput{
+		Name:  svc.Name,
+		Group: svc.Group,
+		Type:  svc.Type,
+		Stage: svc.Stage,
+		Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
+	})
+	res := RunServicePipelineContext(ctx, svc, idx)
+	m.emit(EventServiceFinished, outcomeOf(res))
+	return res
 }
 
 // NewDeployManager 创建部署管理器
@@ -52,6 +80,46 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	}
 
 	totalStart := time.Now()
+	m.batchStart = totalStart
+	m.batchID = m.options.BatchID
+	if m.batchID == "" {
+		m.batchID = NewBatchID()
+	}
+
+	// 宣告批次开始：携带全部计划节点，供前端渲染节点状态与进度分母
+	plan := make([]ServiceNodeInput, 0, len(services))
+	stageSet := make(map[int]bool)
+	for _, svc := range services {
+		stage := svc.Stage
+		if stage <= 0 {
+			stage = 1
+		}
+		stageSet[stage] = true
+		plan = append(plan, ServiceNodeInput{
+			Name:  svc.Name,
+			Group: svc.Group,
+			Type:  svc.Type,
+			Stage: stage,
+			Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
+		})
+	}
+	stages := make([]int, 0, len(stageSet))
+	for st := range stageSet {
+		stages = append(stages, st)
+	}
+	sort.Ints(stages)
+	m.emit(EventBatchStarted, BatchStartedPayload{
+		ID:         m.batchID,
+		Workspace:  m.options.Workspace,
+		Scenario:   m.options.Scenario,
+		Parallel:   m.cfg.IsParallel(),
+		MaxWorkers: m.options.MaxWorkers,
+		Total:      len(services),
+		Stages:     stages,
+		Services:   plan,
+	})
+
+	var allResults []ServiceResult
 
 	// 1. 执行全局批次前置钩子 (PreDeploy，仅本地执行一次)
 	if len(m.cfg.Hooks.PreDeploy) > 0 {
@@ -62,10 +130,12 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 				continue
 			}
 			if err := ctx.Err(); err != nil {
+				m.emitBatchFinished(allResults, false, ctx)
 				return false, fmt.Errorf("pre-deploy hook canceled: %w", err)
 			}
 			if err := ExecuteLocalCommandContext(ctx, cmd, batchLogger); err != nil {
 				logger.Error("Global pre-deploy hook command #%d failed: %v", i+1, err)
+				m.emitBatchFinished(allResults, false, ctx)
 				return false, fmt.Errorf("global pre-deploy hook failed: %w", err)
 			}
 		}
@@ -129,7 +199,6 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	groupPreDeployExecuted := make(map[string]bool)
 	groupPostDeployExecuted := make(map[string]bool)
 
-	var allResults []ServiceResult
 	globalServiceIdx := 0
 	abortedDueToFailure := false
 
@@ -140,7 +209,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		// 若前置阶段已失败，触发流水线熔断保护，阻断后续所有阶段
 		if abortedDueToFailure {
 			for _, svc := range stageServices {
-				allResults = append(allResults, ServiceResult{
+				res := ServiceResult{
 					ServiceName: svc.Name,
 					Group:       svc.Group,
 					Type:        svc.Type,
@@ -148,14 +217,16 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 					Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
 					Success:     false,
 					Error:       fmt.Errorf("skipped: preceding stage failed (pipeline circuit-breaker triggered)"),
-				})
+				}
+				allResults = append(allResults, res)
+				m.emit(EventServiceFinished, outcomeOf(res))
 			}
 			continue
 		}
 
 		if err := ctx.Err(); err != nil {
 			for _, svc := range stageServices {
-				allResults = append(allResults, ServiceResult{
+				res := ServiceResult{
 					ServiceName: svc.Name,
 					Group:       svc.Group,
 					Type:        svc.Type,
@@ -163,7 +234,9 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 					Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
 					Success:     false,
 					Error:       err,
-				})
+				}
+				allResults = append(allResults, res)
+				m.emit(EventServiceFinished, outcomeOf(res))
 			}
 			continue
 		}
@@ -185,10 +258,12 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 							continue
 						}
 						if err := ctx.Err(); err != nil {
+							m.emitBatchFinished(allResults, false, ctx)
 							return false, fmt.Errorf("group %q pre-deploy hook canceled: %w", grp, err)
 						}
 						if err := ExecuteLocalCommandContext(ctx, cmd, grpLogger); err != nil {
 							logger.Error("Group %q pre-deploy hook command #%d failed: %v", grp, i+1, err)
+							m.emitBatchFinished(allResults, false, ctx)
 							return false, fmt.Errorf("group %q pre-deploy hook failed: %w", grp, err)
 						}
 					}
@@ -225,7 +300,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 					}
 					defer func() { <-sem }()
 
-					stageResults[idx] = RunServicePipelineContext(ctx, s, logIdx)
+					stageResults[idx] = m.runOne(ctx, s, logIdx)
 				}(i, curIdx, svc)
 			}
 			wg.Wait()
@@ -245,7 +320,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 					}
 					continue
 				}
-				stageResults[i] = RunServicePipelineContext(ctx, svc, curIdx)
+				stageResults[i] = m.runOne(ctx, svc, curIdx)
 			}
 		}
 
@@ -320,7 +395,49 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		}
 	}
 
+	m.emitBatchFinished(allResults, allSuccess, ctx)
 	return allSuccess, nil
+}
+
+// emitBatchFinished 汇总批次结果并发射结束事件（终态 + 全部节点结果，与历史落盘共用同一结构）
+func (m *DeployManager) emitBatchFinished(results []ServiceResult, allSuccess bool, ctx context.Context) {
+	status := BatchStatusFailed
+	if allSuccess {
+		status = BatchStatusSuccess
+	} else if ctx.Err() != nil {
+		status = BatchStatusCanceled
+	}
+
+	outcomes := make([]ServiceOutcome, 0, len(results))
+	successCount := 0
+	for _, r := range results {
+		o := outcomeOf(r)
+		if o.Status == ServiceStatusOK {
+			successCount++
+		}
+		outcomes = append(outcomes, o)
+	}
+
+	scenario := m.options.Scenario
+	if strings.TrimSpace(scenario) != "" {
+		if sc := m.cfg.FindScenario(scenario); sc != nil {
+			scenario = sc.Name
+		}
+	}
+
+	m.emit(EventBatchFinished, BatchRecord{
+		ID:         m.batchID,
+		Workspace:  m.options.Workspace,
+		Scenario:   scenario,
+		Start:      m.batchStart,
+		End:        time.Now(),
+		DurationMs: time.Since(m.batchStart).Milliseconds(),
+		Total:      len(outcomes),
+		Success:    successCount,
+		Failed:     len(outcomes) - successCount,
+		Status:     status,
+		Services:   outcomes,
+	})
 }
 
 // filterServices 筛选启用的与目标指定的服务（支持多场景、多分组、多类型与服务名多重过滤）

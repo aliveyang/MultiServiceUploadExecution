@@ -34,7 +34,7 @@ func TestWebServerEndpoints(t *testing.T) {
 	if wIndex.Code != http.StatusOK {
 		t.Fatalf("expected status 200 for index, got %d", wIndex.Code)
 	}
-	if !strings.Contains(wIndex.Body.String(), "多服务器部署控制台") {
+	if !strings.Contains(wIndex.Body.String(), "Multi-Service Deployer") {
 		t.Errorf("expected index to contain tool title")
 	}
 
@@ -274,23 +274,78 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 	}
 
-	func TestSSEBroadcastAndReceive(t *testing.T) {
-		msgChan := make(chan string, 10)
-		hub.register(msgChan)
-		defer hub.unregister(msgChan)
+func TestSSEBroadcastAndReceive(t *testing.T) {
+	msgChan := make(chan sseMessage, 10)
+	hub.register(msgChan)
+	defer hub.unregister(msgChan)
 
-		testMsg := "test broadcast log"
-		hub.Broadcast(testMsg)
+	testMsg := "test broadcast log"
+	hub.Broadcast(testMsg)
 
-		select {
-		case received := <-msgChan:
-			if received != testMsg {
-				t.Errorf("expected %q, got %q", testMsg, received)
-			}
-		case <-time.After(1 * time.Second):
-			t.Errorf("timed out waiting for broadcast message")
+	select {
+	case received := <-msgChan:
+		if received.event != "" {
+			t.Errorf("expected plain broadcast to use default message event, got event %q", received.event)
 		}
+		if received.data != testMsg {
+			t.Errorf("expected %q, got %q", testMsg, received.data)
+		}
+	case <-time.After(1 * time.Second):
+		t.Errorf("timed out waiting for broadcast message")
 	}
+}
+
+func TestSSEBroadcastEventNamed(t *testing.T) {
+	msgChan := make(chan sseMessage, 10)
+	hub.register(msgChan)
+	defer hub.unregister(msgChan)
+
+	hub.BroadcastEvent("batch_started", map[string]any{"id": "20260912-080000", "total": 3})
+
+	select {
+	case received := <-msgChan:
+		if received.event != "batch_started" {
+			t.Errorf("expected event name batch_started, got %q", received.event)
+		}
+		if !strings.Contains(received.data, `"id":"20260912-080000"`) || !strings.Contains(received.data, `"total":3`) {
+			t.Errorf("expected single-line JSON payload, got %q", received.data)
+		}
+		if strings.Contains(received.data, "\n") {
+			t.Errorf("event payload must be single-line JSON, got multi-line")
+		}
+	case <-time.After(1 * time.Second):
+		t.Errorf("timed out waiting for named event")
+	}
+}
+
+func TestSSELastEventIDReplay(t *testing.T) {
+	// 广播多条消息建立缓冲
+	hub.Broadcast("line-1")
+	hub.Broadcast("line-2")
+	hub.mu.Lock()
+	lastSeq := hub.seq
+	hub.mu.Unlock()
+	hub.BroadcastEvent("service_finished", map[string]any{"name": "svc-1", "status": "ok"})
+
+	// 断点重放：只应拿到 lastSeq 之后的事件
+	hub.mu.Lock()
+	replayed := hub.replayLocked(lastSeq)
+	hub.mu.Unlock()
+	if len(replayed) != 1 || replayed[0].event != "service_finished" {
+		t.Fatalf("expected exactly 1 replayed named event after breakpoint, got %+v", replayed)
+	}
+	if replayed[0].seq != lastSeq+1 {
+		t.Errorf("expected seq %d, got %d", lastSeq+1, replayed[0].seq)
+	}
+
+	// 全量重放：包含文本行
+	hub.mu.Lock()
+	all := hub.replayLocked(0)
+	hub.mu.Unlock()
+	if len(all) < 3 {
+		t.Errorf("expected full replay to include text lines, got %d", len(all))
+	}
+}
 
 	func TestDeployWithScenarioAndGroupPayload(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -320,21 +375,30 @@ func TestWebServerEndpoints(t *testing.T) {
 			t.Fatalf("failed to write config: %v", err)
 		}
 
-		srv := NewServer(":0", configPath)
+	srv := NewServer(":0", configPath)
 
-		// 触发带 scenario 和 targetGroups 的部署请求
-		reqBody := `{"scenario":"prod","targetGroups":["backend"],"targetTypes":["standard"]}`
-		req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(reqBody))
-		w := httptest.NewRecorder()
-		srv.handleDeploy(w, req)
+	// 触发带 scenario 和 targetGroups 的部署请求
+	reqBody := `{"scenario":"prod","targetGroups":["backend"],"targetTypes":["standard"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	srv.handleDeploy(w, req)
 
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected HTTP 200 OK, got %d: %s", w.Code, w.Body.String())
-		}
-		if !strings.Contains(w.Body.String(), `"started"`) {
-			t.Errorf("expected response to contain 'started', got %s", w.Body.String())
-		}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 OK, got %d: %s", w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"started"`) {
+		t.Errorf("expected response to contain 'started', got %s", w.Body.String())
+	}
+
+	// 等待后台部署 goroutine 与历史收集器完全收尾，避免与 TempDir 清理产生文件竞态
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.isDeploying.Load() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.isDeploying.Load() {
+		t.Errorf("deployment goroutine did not finish in time")
+	}
+}
 
 func TestHandleTestConnect(t *testing.T) {
 	tmpDir := t.TempDir()

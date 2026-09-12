@@ -308,3 +308,39 @@ func isDangerousPath(p string) bool {
 | **SEC-06** | Windows Shell 单引号命令重定向逃逸隐患 | 修复示例命令中由于单引号界定符在 cmd.exe 下被识别为输出重定向的缺陷，强制统一使用双引号或安全转义输出 | ✅ **已闭环** |
 
 **最终验证结论**：全模块单元测试与端到端 Mock SSH 仿真测试 100% 通过（PASS），绿色单二进制 `deploy.exe` 已成功构建并验证完毕。
+
+---
+
+## 🔄 前后端对齐改造安全增补 (2026-09-12)
+
+Web 控制台完成全新 UI 前后端对齐改造（单文件 SPA 全面接通后端），随改造引入的存储与接口能力同步完成安全评估与加固：
+
+| 编号 | 事项 | 加固方案与落地点 | 状态 |
+|---|---|---|---|
+| **SEC-07** | 新增 SSH 私钥库的密钥泄露风险 | `web/keys.go` 私钥以 0600 权限存储于 `workspaces/<空间>/keys/`；列表/导入/删除响应仅含算法与 SHA256 公钥指纹，**任何接口均不回传私钥内容**；文件名经 `keyNamePattern` 白名单校验防路径穿透 | ✅ **已闭环** |
+| **SEC-08** | 批次历史归档的敏感信息暴露 | 批次记录 JSON 仅含节点状态/耗时/错误摘要，日志归档沿用既有 SSE 广播口径（脱敏后日志行）；归档目录按工作空间物理隔离 | ✅ **已闭环** |
+| **SEC-09** | settings.json 监听地址弱化默认绑定 | `config.Settings.Validate` 强制 host:port 格式校验；默认绑定红线保持 `127.0.0.1:8080`，settings 值仅在用户未显式指定 `-addr` 时于启动时生效 | ✅ **已闭环** |
+| **ARCH-09** | 批次结果无结构化输出（前端只能解析文本日志） | `deployer/batch.go` 引入批次生命周期结构化事件（`OnEvent` 回调，CLI 场景零开销）；SSE 在文本日志外新增命名 JSON 事件；`web/history.go` 事件收集器聚合落盘，端到端测试覆盖事件序列 | ✅ **已闭环** |
+| **ARCH-10** | Web 包单文件膨胀、职责耦合 | `web/server.go` 瘦身为装配层，handler 按资源域拆分为 `sse.go` / `workspace_handlers.go` / `config_handlers.go` / `deploy_handlers.go` / `system.go` / `history.go` / `keys.go` / `settings.go`；依赖方向保持单向 `config ← deployer ← web` | ✅ **已闭环** |
+
+**回归验证结论**：`go vet ./...` 0 警告；`go test ./...` 全部 PASS（含新增的 history 落盘/端点、密钥 CRUD 与不泄漏断言、设置读写/409/校验、批次事件序列用例）；`CGO_ENABLED=0` 构建自检通过。
+
+## 🔄 遗留项专项闭环 (2026-09-12 第二批)
+
+| 编号 | 事项 | 方案与落地点 | 状态 |
+|---|---|---|---|
+| **ARCH-11** | 独立主机库（此前仅能从 services[].server 派生） | `config.DeployConfig` 新增 `hosts[]`（`HostConfig`: name + server），服务通过 `hostRef` 引用并以"内联非零字段优先"语义解析合并；`ValidateAndNormalize` 校验主机名唯一/凭据齐全/悬空引用；`MaskConfig`/`MergePreservingSecrets`/`ExpandEnvVariables` 全部覆盖主机库凭证（掩码红线同步生效） | ✅ **已闭环** |
+| **ARCH-12** | SSE 断线丢日志不可恢复 | SSE 消息分配全局单调 `seq` 并维护 4096 条环形缓冲；`handleSSE` 支持 `Last-Event-ID` 断点重放（EventSource 自动重连原生携带），重连后日志与结构化事件自动补发 | ✅ **已闭环** |
+| **ARCH-13** | 活动工作空间重启后丢失（每次重启回落 default） | `settings.json` 新增 `activeWorkspace`；工作空间 select/create/delete 时落盘，`NewServer` 启动时校验存在性并恢复 | ✅ **已闭环** |
+
+## 🔄 启动测试与真实浏览器实测修复闭环 (2026-09-12 第三批)
+
+交付前以内置浏览器模拟真实用户全流程操作（配置编辑/保存、主机库抽屉、部署触发、SSE 实时终端、历史详情、设置保存、空间切换），实测发现并修复以下缺陷：
+
+| 编号 | 缺陷 | 根因与修复 | 验证 |
+|---|---|---|---|
+| **ARCH-14** | 批次归档触发 SSE 自死锁：首个批次结束后 `isDeploying` 永久为 true，后续部署全部 409、取消端点挂起 | `batchCollector.observe` 持有 `c.mu` 期间 `persistLocked` 调用 logger → `OnLog` → `teeLog` → `appendLog` 再次请求 `c.mu`，非重入互斥锁自死锁。重构锁模型：批次记录仅由部署 goroutine 串行访问（免锁），`logMu` 仅保护日志文件句柄，并约定持锁期间禁止调用 logger。单元测试未覆盖的原因：直调 handler 时 `logger.OnLog` 未接线。新增 `TestDeployTeeLogNoDeadlock` 回归测试（接通真实日志回调跑完整部署，断言锁释放） | ✅ 已闭环（浏览器实测 + 回归测试） |
+| **ARCH-15** | 前端部署触发竞态：`batch_started` 事件先于 POST 响应到达时，`state.deploy` 被响应处理清空，执行页进度不显示 | `startDeployFlow` 改为在发起请求前清理上一批次状态 | ✅ 已闭环（实测部署 ID/节点状态/进度全链路渲染） |
+| **ARCH-16** | 前端后台标签页更新停滞：`softRender` 仅依赖 rAF，后台节流下 SSE 驱动的界面冻结 | rAF 之外增加 setTimeout 兜底（渲染幂等守卫） | ✅ 已闭环 |
+| **SEC-10** | `settings.json` 被误识别为工作空间 "settings"；同名工作空间可创建并与运行时文件冲突 | `ListWorkspaces` 排除运行时设置文件；`IsValidWorkspaceID` 增加 `settings` 保留名拒绝 | ✅ 已闭环 |
+| **ARCH-17** | 抽屉为动态注入 DOM，`bind()` 渲染期绑定使其内部按钮无事件 | 抽屉打开后调用 `bindDrawerActions()` 单独绑定 | ✅ 已闭环（主机库抽屉编辑→保存→落盘实测） |
