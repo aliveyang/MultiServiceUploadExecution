@@ -21,6 +21,27 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+// devStaticDir 开发模式（DEPLOY_DEV=1）下前端静态资源的磁盘目录（相对启动时工作目录）
+const devStaticDir = "web/static"
+
+// newStaticHandler 构建前端静态资源处理器：
+// 开发模式（DEPLOY_DEV=1）且磁盘目录存在时直读磁盘，前端改动刷新浏览器即生效、无需重新编译；
+// 目录缺失或未开启开发模式时回退到编译期内嵌资源，生产交付行为保持不变。
+func newStaticHandler(devDir string, devEnabled bool) (http.Handler, error) {
+	if devEnabled {
+		if st, err := os.Stat(devDir); err == nil && st.IsDir() {
+			logger.System("Dev mode enabled: serving static assets from disk (%s), page refresh picks up edits without rebuild.", devDir)
+			return http.FileServer(http.Dir(devDir)), nil
+		}
+		logger.System("Dev mode requested but %s not found, falling back to embedded assets.", devDir)
+	}
+	subFS, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load static files: %w", err)
+	}
+	return http.FileServer(http.FS(subFS)), nil
+}
+
 // Server Web 管理服务（仅负责装配：路由注册、生命周期与共享状态；
 // 具体业务 handler 按资源域拆分在各自文件中）
 type Server struct {
@@ -116,11 +137,6 @@ func (s *Server) resolveWorkspacePath(r *http.Request) (string, string) {
 	return wsPath, ws
 }
 
-// Start 启动 HTTP 服务器并注册路由（向后兼容）
-func (s *Server) Start(autoOpen bool) error {
-	return s.StartContext(context.Background(), autoOpen)
-}
-
 // StartContext 启动 HTTP 服务器并注册路由，支持外部 Context 优雅关闭与部署任务联动中断
 func (s *Server) StartContext(ctx context.Context, autoOpen bool) error {
 	// 将全局日志事件连通到 SSE 广播与当前批次的日志归档
@@ -131,12 +147,11 @@ func (s *Server) StartContext(ctx context.Context, autoOpen bool) error {
 
 	mux := http.NewServeMux()
 
-	// 静态前端资源
-	subFS, err := fs.Sub(staticFiles, "static")
+	// 静态前端资源（DEPLOY_DEV=1 开发模式下直读磁盘 web/static，改完刷新即生效）
+	fileServer, err := newStaticHandler(devStaticDir, os.Getenv("DEPLOY_DEV") == "1")
 	if err != nil {
-		return fmt.Errorf("failed to load static files: %w", err)
+		return err
 	}
-	fileServer := http.FileServer(http.FS(subFS))
 	mux.Handle("/", fileServer)
 
 	// API 路由（按资源域拆分在各 handler 文件中）

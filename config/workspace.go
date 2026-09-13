@@ -37,10 +37,12 @@ type WorkspaceInfo struct {
 	UpdatedAt int64  `json:"updatedAt"` // 最近更新时间戳（毫秒）
 }
 
-// IsValidWorkspaceID 校验工作空间标识是否合法安全
+// IsValidWorkspaceID 校验工作空间标识是否合法安全。
+// workspaceIDPattern 仅允许字母/数字/下划线/短横线/中文（1-64 位），
+// 已覆盖路径穿透与特殊字符防御，无需额外黑名单。
 func IsValidWorkspaceID(id string) bool {
 	id = strings.TrimSpace(id)
-	if id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\: *?"<>|`) {
+	if id == "" {
 		return false
 	}
 	if reservedWorkspaceIDs[strings.ToLower(id)] {
@@ -99,11 +101,15 @@ func EnsureWorkspaceDir(workspaceDir, fallbackConfigPath string) error {
 	return nil
 }
 
-// ResolveWorkspaceDir 根据配置文件路径解析工作空间根目录（配置文件所在目录下的 workspaces/）
+// ResolveWorkspaceDir 根据配置文件路径解析工作空间根目录（配置文件所在目录下的 workspaces/）。
+// 若配置文件本就位于工作空间根目录（如自动探测到的 workspaces/<空间>.json），直接返回该目录，避免嵌套出 workspaces/workspaces。
 func ResolveWorkspaceDir(configPath string) string {
 	baseDir := filepath.Dir(configPath)
 	if baseDir == "." || baseDir == "" {
 		return DefaultWorkspaceDir
+	}
+	if strings.EqualFold(filepath.Base(baseDir), DefaultWorkspaceDir) {
+		return baseDir
 	}
 	return filepath.Join(baseDir, DefaultWorkspaceDir)
 }

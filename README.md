@@ -8,14 +8,13 @@
 ## 🌟 核心特性
 
 - ⚡ **运行零依赖**：编译为一个独立的绿色静态二进制可执行文件（`deploy.exe` / `deploy`，约 6MB），无需任何外部运行时依赖，随拷随用。
-- 🎯 **多场景与预设编排 (Scenarios)**：支持预定义部署场景（如 `prod`、`test`、`quick-restart`），支持环境与分组的灵活绑定与一键切换。
-- 📁 **多分组组织与分别部署 (Groups)**：服务按组分类（如 `infra`、`backend`、`frontend`），支持命令行按组（`-g`）或 Web 控制台按组分别一键部署。
+- 🏷️ **标签化多维归类与筛选 (Tags)**：服务打上任意多个标签（输入新标签或选用已有标签，无需预声明），侧栏/命令行/Web 控制台按标签筛选，多选并集一键部署；标签批次钩子（`tagHooks`）承接"本地构建一次"等批次级动作。
 - 🛠️ **多部署任务类型适配 (Task Types)**：
   - `standard`（默认）：全流程（构建 -> SSH -> 远端前置 -> SFTP传文件 -> 远端后置 -> 本地后置）
   - `exec_only`：纯命令执行型（自动跳过 SFTP，专用于数据库迁移、Docker 重启、清理缓存等运维任务）
   - `sync_only`：纯文件同步型（仅传输文件，跳过远端重启/命令）
 - 🌊 **分阶段波次编排与熔断保护 (Stages)**：支持按 `stage`（阶段号）升序分波次串行执行（阶段内并发），前置阶段失败自动熔断阻断后续阶段，杜绝雪崩事故。
-- 🖥️ **内置可视化 Web 控制台**：运行 `./deploy.exe -web` 即刻在浏览器中图形化管理多场景、多分组服务、增删复制并**在线一键分别部署**。
+- 🖥️ **内置可视化 Web 控制台**：运行 `./deploy.exe -web` 即刻在浏览器中图形化管理标签化服务、增删复制并**在线一键分别部署**。
 - 🚀 **完全并发执行与 Worker Pool 限流**：基于 Go Goroutine 原生并发调度，支持通过 `-j` 控制最大并发 Worker 数。
 - 🎨 **多色流式终端 / 网页实时日志**：并发执行时为每个服务节点分配专属终端颜色标签，网页端通过 SSE 实时流式呈现。
 - 📦 **内置 SFTP 文件同步**：支持递归上传目录或单个文件，支持通配符排除规则，自动创建远端层级目录。
@@ -28,7 +27,8 @@
   6. `postUploadRemote`：上传后远端执行命令
   7. `postUploadLocal`：单个节点上传后本地执行命令
   8. 🌟 **`hooks.postDeploy`（全局批次后置）**：全部选定节点成功部署后在本地执行一次
-- 📊 **可视化统计看板**：执行结束后自动输出汇总表格，直观展示每个服务器单元的 Group、Type、Stage、状态（`SUCCESS` / `FAILED`）、耗时及详情。
+- 🧩 **批次钩子上下文变量注入**：批次/标签钩子执行时自动注入环境变量 `SPACE`、`TAGS`、`BATCH_ID`、`CONFIG`、`NODE_TOTAL`、`NODE_SUCCESS`、`NODE_FAILED`、`DURATION`（POSIX shell 以 `$SPACE` 引用，Windows cmd 以 `%SPACE%` 引用；批次开始前结果类变量为 0）。
+- 📊 **可视化统计看板**：执行结束后自动输出汇总表格，直观展示每个服务器单元的 Tags、Type、Stage、状态（`SUCCESS` / `FAILED`）、耗时及详情。
 
 ---
 
@@ -45,10 +45,23 @@
 ./deploy.exe -web
 ```
 - 程序将启动本地轻量 Web 服务（默认安全监听 `127.0.0.1:8080`），并**自动在系统默认浏览器中打开**。
-- 可在页面上直观管理服务单元、全局批次前后钩子（`preDeploy` / `postDeploy`）、调整密码/路径/命令钩子、一键保存配置；
+- 可在页面上直观管理服务单元、标签（新增输入或选择已有标签）、全局批次前后钩子（`preDeploy` / `postDeploy`）与**按标签绑定的批次钩子（`tagHooks`）**、调整密码/路径/命令钩子、一键保存配置；
 - 点击 **“⚡ 一键开始部署”** 按钮即可调出内置 Web 终端，实时观看多服务器并发部署进度与各节点彩色日志！
 
 > 如需指定其他端口：`./deploy.exe -web -addr :9000`
+
+#### 开发模式（改后即时生效）
+二次开发 Web 控制台时，使用热重载脚本启动，免去"改一行、编一次"的等待：
+
+```bash
+./dev.sh                # 默认 127.0.0.1:8080，需在仓库根目录运行（Git Bash / Linux / macOS）
+./dev.sh -addr 127.0.0.1:8081   # 也可透传其他 deploy 参数，如 -w prod
+```
+
+- **前端**（`web/static/index.html` 等）：以 `DEPLOY_DEV=1` 启动后**直读磁盘**渲染，改完刷新浏览器即生效，无需重新编译；
+- **后端**（任意 `*.go` / `go.mod`）：脚本监听文件变更，自动 `go build` 并重启服务；编译失败时旧服务保持在线，修复后保存即自动重试；
+- 每次自动重启不会重复弹出浏览器（内置 `DEPLOY_NO_OPEN=1`），请手动访问终端打印的地址；
+- 不设置 `DEPLOY_DEV` 时仍使用编译期内嵌静态资源，生产交付行为完全不变。
 
 ---
 
@@ -63,21 +76,17 @@
 # 2. 默认执行全量部署（自动读取 deploy.json 或 deploy.yaml，按 Stage 波次执行）
 ./deploy.exe
 
-# 3. 按预定义场景部署（如全量生产发布、仅更新后端、快速维护）
-./deploy.exe -s prod
-./deploy.exe -s backend-only
-
-# 4. 按指定业务分组分别部署（支持逗号分隔）
+# 3. 按标签筛选部署（并集语义：携带任一选中标签的服务都会部署）
 ./deploy.exe -g frontend
 ./deploy.exe -g infra,backend -j 5
 
-# 5. 按任务类型过滤执行（如仅执行纯命令任务：数据库迁移/服务重启）
+# 4. 按任务类型过滤执行（如仅执行纯命令任务：数据库迁移/服务重启）
 ./deploy.exe --type exec_only
 
-# 6. 指定仅部署某些具体服务单元（多个用逗号隔开）
+# 5. 指定仅部署某些具体服务单元（多个用逗号隔开）
 ./deploy.exe -t api-server-01,web-server-02
 
-# 7. 临时切换为顺序串行执行（便于单步排查错误）
+# 6. 临时切换为顺序串行执行（便于单步排查错误）
 ./deploy.exe -p=false
 ```
 
@@ -85,7 +94,7 @@
 
 ## 📝 配置文件规范 (`deploy.json` / `deploy.yaml`)
 
-工具支持 JSON 与 YAML 两种格式，以配置单元为核心：
+工具支持 JSON 与 YAML 两种格式，以配置单元为核心，通过**标签（tags）**进行多维度归类与筛选：
 
 ```json
 {
@@ -99,9 +108,21 @@
       "echo '==> [批次后置] 所有节点均部署成功（仅执行一次）...'"
     ]
   },
+  "tagHooks": [
+    {
+      "name": "backend",
+      "description": "后端集群批次钩子（部署携带 backend 标签的服务时触发，本地仅执行一次）",
+      "hooks": {
+        "preDeploy": ["echo '==> [Backend] 本地 Maven 打包...'"],
+        "postDeploy": ["echo '==> [Backend] 后端集群全部节点上线成功！'"]
+      }
+    }
+  ],
   "services": [
     {
       "name": "api-server-01",
+      "tags": ["backend", "core"],
+      "stage": 1,
       "server": {
         "host": "192.168.1.101",
         "port": 22,
@@ -138,6 +159,8 @@
     },
     {
       "name": "web-server-02",
+      "tags": ["frontend"],
+      "stage": 2,
       "server": {
         "host": "192.168.1.102",
         "port": 22,
@@ -161,6 +184,13 @@
 
 > 💡 **提示**：每个 hook 命令既支持单个字符串（如 `"npm run build"`），也支持字符串数组（如 `["cmd1", "cmd2"]`），解析器自动向下兼容。
 
+### 标签体系（tags / tagHooks）
+
+- 服务通过 `tags` 打上任意多个标签（自动小写去重；未打标服务归属默认标签 `default`），标签**无需预先声明**，打标即生效；
+- 侧栏、筛选下拉与部署请求均按标签过滤，一次勾选多个标签按**并集**命中（携带任一选中标签的服务都会部署）；
+- 需要为某类标签挂批次前后置钩子（如"本地构建一次"）时，在 `tagHooks` 中按标签名声明，批次内该标签全部节点成功后触发 post 钩子；
+- **旧配置平滑迁移**：旧版 `svc.group` 字段自动转为标签、旧版 `groups[].hooks` 自动迁移为 `tagHooks`（同名时以显式 `tagHooks` 为准）；旧版 `scenarios` 场景预设已移除，加载时输出告警提示，请改用标签筛选。
+
 ---
 
 ## 🛠️ 命令行参数一览
@@ -170,8 +200,7 @@
 | `-web` | - | 关闭 | 启动 Web 图形化配置控制台并自动打开浏览器 |
 | `-addr <addr>` | - | `:8080` | Web 控制台监听地址，需配合 `-web` 使用（如 `:9000`） |
 | `--config <file>` | `-c` | `deploy.json` / `deploy.yaml` | 指定配置文件路径 |
-| `--scenario <name>` | `-s` | - | 指定预定义场景名称（如 `prod`、`backend-only`） |
-| `--group <names>` | `-g` | (全部组) | 过滤仅部署指定的分组名称，支持逗号分隔（如 `frontend,backend`） |
+| `--tags <names>` | `-g` | (全部服务) | 按服务标签过滤（并集语义），支持逗号分隔（如 `backend,data`） |
 | `--target <names>`| `-t` | (全部服务) | 过滤仅部署指定的服务名称，支持逗号分隔 |
 | `--type <type>` | - | (全部类型) | 按任务类型过滤：`standard`, `exec_only`, `sync_only` |
 | `--parallel <bool>`| `-p` | `true` | 覆盖配置文件中的并发设置（`true` 并发，`false` 串行） |
@@ -179,6 +208,8 @@
 | `-init` | - | - | 快速生成模板配置文件 `deploy.example.json` |
 | `--version` | `-v` | - | 查看工具版本 |
 | `--help` | `-h` | - | 查看完整帮助信息 |
+
+> ⚠️ **变更说明**：自标签化改造起，原 `-s/--scenario` 场景参数已移除，`-g` 由分组过滤改为**标签过滤**（旧配置中的 group 会自动迁移为标签，`-g backend` 等原有用法行为不变）。
 
 ---
 
@@ -202,7 +233,7 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o deploy-mac m
 
 ## 🌐 Web 控制台 API 一览
 
-Web 模式（`deploy -web`，默认监听 `127.0.0.1:8080`）内置控制台暴露以下 REST 接口，前端为单文件自包含 SPA（`web/static/index.html`，经 `embed.FS` 嵌入分发）：
+Web 模式（`deploy -web`，默认监听 `127.0.0.1:8080`）内置控制台暴露以下 REST 接口，前端为零构建链原生 SPA（`web/static/` 下的 index.html + css/ + js/，经 `embed.FS` 嵌入分发）：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -222,7 +253,7 @@ Web 模式（`deploy -web`，默认监听 `127.0.0.1:8080`）内置控制台暴�
 | `GET` | `/api/keys` | 私钥库列表（仅元数据：算法 + SHA256 指纹，**永不返回私钥内容**） |
 | `POST` | `/api/keys` | 导入私钥（0600 权限落盘至 `workspaces/<空间>/keys/`） |
 | `DELETE` | `/api/keys?id=` | 删除私钥 |
-| `GET` / `POST` | `/api/settings` | 运行时设置（`settings.json`：默认并发度 / SSH 超时 / 监听地址） |
+| `GET` / `POST` | `/api/settings` | 运行时设置（`settings.json`：默认并发度 / 自动打开浏览器 / 监听地址） |
 
 > 💡 **批次历史归档**：每次部署批次结束后，批次记录与完整日志分别归档至 `workspaces/<空间>/history/batch-<批次ID>.json` 与 `.log`，批次 ID 格式为 `YYYYMMDD-HHMMSS`。
 

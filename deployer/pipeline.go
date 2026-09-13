@@ -13,7 +13,7 @@ import (
 // ServiceResult 单个服务单元的执行结果
 type ServiceResult struct {
 	ServiceName string
-	Group       string
+	Tags        []string
 	Type        string
 	Stage       int
 	Host        string
@@ -23,11 +23,6 @@ type ServiceResult struct {
 	Stats       *UploadStats
 }
 
-// RunServicePipeline 执行单个服务的完整部署流水线（向后兼容）
-func RunServicePipeline(svc config.ServiceConfig, index int) (result ServiceResult) {
-	return RunServicePipelineContext(context.Background(), svc, index)
-}
-
 // RunServicePipelineContext 执行单个服务的完整部署流水线，支持 Context 及时取消
 func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, index int) (result ServiceResult) {
 	startTime := time.Now()
@@ -35,7 +30,7 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 
 	result = ServiceResult{
 		ServiceName: svc.Name,
-		Group:       svc.Group,
+		Tags:        svc.Tags,
 		Type:        svc.Type,
 		Stage:       svc.Stage,
 		Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -72,55 +67,55 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 		return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))
 	}
 
-		// Phase 3: 上传前远端执行命令 (PreUploadRemote)
-		if svc.Type != config.DeployTypeSyncOnly {
-			if err := runHooks(ctx, log, "Phase 2/5: pre-upload remote commands", svc.Hooks.PreUploadRemote, func(c string) error {
-				return sshClient.ExecuteRemoteCommandContext(ctx, c)
-			}); err != nil {
-				return aborted(result, log, err)
-			}
-		} else {
-			log.Info(">>> Phase 2/5: Deploy type is 'sync_only', skipping pre-upload remote commands.")
+	// Phase 3: 上传前远端执行命令 (PreUploadRemote)
+	if svc.Type != config.DeployTypeSyncOnly {
+		if err := runHooks(ctx, log, "Phase 2/5: pre-upload remote commands", svc.Hooks.PreUploadRemote, func(c string) error {
+			return sshClient.ExecuteRemoteCommandContext(ctx, c)
+		}); err != nil {
+			return aborted(result, log, err)
 		}
+	} else {
+		log.Info(">>> Phase 2/5: Deploy type is 'sync_only', skipping pre-upload remote commands.")
+	}
 
-		if err := ctx.Err(); err != nil {
-			return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))
+	if err := ctx.Err(); err != nil {
+		return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))
+	}
+
+	// Phase 4: 文件传输 (SFTP Upload)
+	if svc.Type == config.DeployTypeExecOnly {
+		log.Info(">>> Phase 3/5: Deploy type is 'exec_only', skipping file transfer.")
+	} else if strings.TrimSpace(svc.Upload.LocalPath) != "" && strings.TrimSpace(svc.Upload.RemotePath) != "" {
+		log.Info(">>> Phase 3/5: Transferring files via SFTP...")
+		uploader, err := NewSFTPUploader(sshClient, log)
+		if err != nil {
+			return aborted(result, log, fmt.Errorf("SFTP init failed: %w", err))
 		}
+		defer uploader.Close()
 
-		// Phase 4: 文件传输 (SFTP Upload)
-		if svc.Type == config.DeployTypeExecOnly {
-			log.Info(">>> Phase 3/5: Deploy type is 'exec_only', skipping file transfer.")
-		} else if strings.TrimSpace(svc.Upload.LocalPath) != "" && strings.TrimSpace(svc.Upload.RemotePath) != "" {
-			log.Info(">>> Phase 3/5: Transferring files via SFTP...")
-			uploader, err := NewSFTPUploader(sshClient, log)
-			if err != nil {
-				return aborted(result, log, fmt.Errorf("SFTP init failed: %w", err))
-			}
-			defer uploader.Close()
-
-			stats, err := uploader.Upload(svc.Upload)
-			if err != nil {
-				return aborted(result, log, fmt.Errorf("SFTP upload failed: %w", err))
-			}
-			result.Stats = stats
-		} else {
-			log.Info(">>> Phase 3/5: No upload paths configured, skipping file transfer.")
+		stats, err := uploader.Upload(svc.Upload)
+		if err != nil {
+			return aborted(result, log, fmt.Errorf("SFTP upload failed: %w", err))
 		}
+		result.Stats = stats
+	} else {
+		log.Info(">>> Phase 3/5: No upload paths configured, skipping file transfer.")
+	}
 
-		if err := ctx.Err(); err != nil {
-			return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))
-		}
+	if err := ctx.Err(); err != nil {
+		return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))
+	}
 
-		// Phase 5: 上传后远端执行命令 (PostUploadRemote)
-		if svc.Type != config.DeployTypeSyncOnly {
-			if err := runHooks(ctx, log, "Phase 4/5: post-upload remote commands", svc.Hooks.PostUploadRemote, func(c string) error {
-				return sshClient.ExecuteRemoteCommandContext(ctx, c)
-			}); err != nil {
-				return aborted(result, log, err)
-			}
-		} else {
-			log.Info(">>> Phase 4/5: Deploy type is 'sync_only', skipping post-upload remote commands.")
+	// Phase 5: 上传后远端执行命令 (PostUploadRemote)
+	if svc.Type != config.DeployTypeSyncOnly {
+		if err := runHooks(ctx, log, "Phase 4/5: post-upload remote commands", svc.Hooks.PostUploadRemote, func(c string) error {
+			return sshClient.ExecuteRemoteCommandContext(ctx, c)
+		}); err != nil {
+			return aborted(result, log, err)
 		}
+	} else {
+		log.Info(">>> Phase 4/5: Deploy type is 'sync_only', skipping post-upload remote commands.")
+	}
 
 	if err := ctx.Err(); err != nil {
 		return aborted(result, log, fmt.Errorf("deployment canceled: %w", err))

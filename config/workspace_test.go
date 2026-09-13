@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+// TestResolveWorkspaceDir 验证工作空间根目录解析不产生 workspaces/workspaces 嵌套
+func TestResolveWorkspaceDir(t *testing.T) {
+	cases := map[string]string{
+		"deploy.json":             "workspaces",
+		"conf/deploy.yaml":        filepath.Join("conf", "workspaces"),
+		"workspaces/default.json": "workspaces",
+		"workspaces/prod.yaml":    "workspaces",
+	}
+	for in, want := range cases {
+		if got := ResolveWorkspaceDir(in); got != want {
+			t.Errorf("ResolveWorkspaceDir(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestIsValidWorkspaceID(t *testing.T) {
 	validIDs := []string{
 		"default",

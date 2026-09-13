@@ -39,29 +39,29 @@ func TestFormatBytes(t *testing.T) {
 	if formatBytes(1024) != "1.00 KB" {
 		t.Errorf("unexpected 1.00 KB format: %s", formatBytes(1024))
 	}
-		if formatBytes(1048576*2) != "2.00 MB" {
-			t.Errorf("unexpected 2.00 MB format: %s", formatBytes(1048576*2))
-		}
+	if formatBytes(1048576*2) != "2.00 MB" {
+		t.Errorf("unexpected 2.00 MB format: %s", formatBytes(1048576*2))
+	}
+}
+
+func TestCleanRemoteDangerousPathRejected(t *testing.T) {
+	uploader := &SFTPUploader{
+		log: logger.NewServiceLogger("test-svc", 0),
 	}
 
-	func TestCleanRemoteDangerousPathRejected(t *testing.T) {
-		uploader := &SFTPUploader{
-			log: logger.NewServiceLogger("test-svc", 0),
-		}
-
-		// 测试当 localPath 存在但 remotePath 为危险目录时，Upload 能够拒绝
-		tmpDir := t.TempDir()
-		cfg := config.UploadConfig{
-			LocalPath:   tmpDir,
-			RemotePath:  "/etc",
-			CleanRemote: true,
-		}
-
-		_, err := uploader.Upload(cfg)
-		if err == nil {
-			t.Fatalf("expected error when cleanRemote is true on /etc, got nil")
-		}
-		if !strings.Contains(err.Error(), "dangerous remote path") {
-			t.Errorf("expected dangerous path error, got: %v", err)
-		}
+	// 测试当 localPath 存在但 remotePath 为危险目录时，Upload 能够拒绝
+	tmpDir := t.TempDir()
+	cfg := config.UploadConfig{
+		LocalPath:   tmpDir,
+		RemotePath:  "/etc",
+		CleanRemote: true,
 	}
+
+	_, err := uploader.Upload(cfg)
+	if err == nil {
+		t.Fatalf("expected error when cleanRemote is true on /etc, got nil")
+	}
+	if !strings.Contains(err.Error(), "dangerous remote path") {
+		t.Errorf("expected dangerous path error, got: %v", err)
+	}
+}

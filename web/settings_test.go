@@ -36,7 +36,7 @@ func TestSettingsGetDefaults(t *testing.T) {
 func TestSettingsSaveAndRestartHint(t *testing.T) {
 	srv, wsDir := newTestServer(t)
 
-	body := `{"maxWorkers":5,"connectTimeout":20,"listenAddr":"127.0.0.1:9090"}`
+	body := `{"maxWorkers":5,"listenAddr":"127.0.0.1:9090","autoOpen":false}`
 	w := httptest.NewRecorder()
 	srv.handleSettings(w, httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
@@ -66,6 +66,9 @@ func TestSettingsSaveAndRestartHint(t *testing.T) {
 	_ = json.Unmarshal(wGet.Body.Bytes(), &view)
 	if view.MaxWorkers != 5 || view.ListenAddrSetting != "127.0.0.1:9090" || !view.ListenAddrRestart {
 		t.Errorf("expected saved settings to round-trip, got %+v", view)
+	}
+	if view.AutoOpenBrowser {
+		t.Errorf("expected autoOpen=false to round-trip, got %+v", view)
 	}
 }
 

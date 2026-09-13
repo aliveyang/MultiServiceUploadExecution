@@ -131,3 +131,74 @@ func pemToJSONString(pemBytes []byte) string {
 	data, _ := json.Marshal(string(pemBytes))
 	return strings.Trim(string(data), `"`)
 }
+
+// TestKeysImportFromPath 验证"填写本地路径后入库"：服务端代读控制机本地私钥文件，
+// 未显式提供 name 时默认取文件名；列表响应携带存储目录 dir 供前端拼装引用路径。
+func TestKeysImportFromPath(t *testing.T) {
+	srv, wsDir := newTestServer(t)
+	keyPEM := genTestPrivateKey(t)
+
+	// 先把私钥写到控制机本地任意路径（模拟用户手填的源文件）
+	srcPath := filepath.Join(t.TempDir(), "my-source-key.pem")
+	if err := os.WriteFile(srcPath, keyPEM, 0600); err != nil {
+		t.Fatalf("failed to write source key: %v", err)
+	}
+
+	// json.Marshal 负责正确转义 Windows 路径中的反斜杠
+	pathJSON, err := json.Marshal(srcPath)
+	if err != nil {
+		t.Fatalf("failed to marshal path: %v", err)
+	}
+	importBody := `{"path":` + string(pathJSON) + `}`
+	reqImport := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(importBody))
+	wImport := httptest.NewRecorder()
+	srv.handleKeys(wImport, reqImport)
+	if wImport.Code != http.StatusOK {
+		t.Fatalf("expected 200 for path import, got %d: %s", wImport.Code, wImport.Body.String())
+	}
+	var imported keyInfo
+	if err := json.Unmarshal(wImport.Body.Bytes(), &imported); err != nil {
+		t.Fatalf("failed to parse import response: %v", err)
+	}
+	if imported.Name != "my-source-key.pem" {
+		t.Errorf("expected default name from file base, got %q", imported.Name)
+	}
+
+	// 列表响应应包含存储目录 dir，且不泄露私钥内容
+	reqList := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
+	wList := httptest.NewRecorder()
+	srv.handleKeys(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("expected 200 for key list, got %d", wList.Code)
+	}
+	if !strings.Contains(wList.Body.String(), `"dir"`) || !strings.Contains(wList.Body.String(), "keys") {
+		t.Errorf("expected keys dir in list response, got: %s", wList.Body.String())
+	}
+	if strings.Contains(wList.Body.String(), "PRIVATE KEY") {
+		t.Errorf("security violation: key list leaked private key material")
+	}
+
+	// 库文件真实落盘（默认空间）
+	stored := filepath.Join(wsDir, "default", "keys", "my-source-key.pem")
+	if _, err := os.Stat(stored); err != nil {
+		t.Errorf("expected key stored at %s: %v", stored, err)
+	}
+
+	// content 与 path 互斥
+	dup := `{"path":` + string(pathJSON) + `,"content":"x"}`
+	reqDup := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(dup))
+	wDup := httptest.NewRecorder()
+	srv.handleKeys(wDup, reqDup)
+	if wDup.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when both path and content provided, got %d", wDup.Code)
+	}
+
+	// 路径不存在返回 400
+	missing := `{"path":"Z:/definitely/not/exist.pem"}`
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(missing))
+	wMissing := httptest.NewRecorder()
+	srv.handleKeys(wMissing, reqMissing)
+	if wMissing.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing path, got %d", wMissing.Code)
+	}
+}

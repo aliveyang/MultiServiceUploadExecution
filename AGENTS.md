@@ -33,7 +33,11 @@ MultiServiceUploadExecution/
 ├── web/                        # 内置可视化 Web 控制台服务
 │   ├── server.go               # HTTP 服务 (默认 127.0.0.1:8080)、embed.FS 静态资产绑定、REST API、SSE 事件广播、atomic.Bool 防重入锁
 │   ├── server_test.go          # Web 接口与防并发重入测试
-│   └── static/index.html       # 原生自包含 SPA 单页面应用 (HTML/CSS/原生 JS，无任何 node 构建依赖)
+│   └── static/                 # 原生前端（零构建链：无 node/npm/打包器，由 embed.FS 原样嵌入分发）
+│       ├── index.html          # SPA 外壳（结构标记 + 按依赖顺序引入 css/js）
+│       ├── css/                # base(令牌/骨架/通用组件) · components(表单/抽屉) · views(视图样式)
+│       └── js/                 # core(状态/API/派生模型) · layout(外壳渲染) · views(视图) ·
+│                               # actions(交互流程/动作表) · bind(DOM 绑定) · app(路由/监听/启动引导)
 ├── doc/
 │   └── AUDIT_REPORT.md         # 综合安全与架构审计报告 (记录 SEC-01~04 与 ARCH-01~04 加固闭环)
 ├── start.bat / stop.bat        # Windows 生产级后台静默启停批处理脚本 (PID 锁与日志重定向)
@@ -49,7 +53,7 @@ MultiServiceUploadExecution/
 | 序号 | 规则名称 | 核心要求 (Do) | 严禁行为 / 反模式 (Don't) |
 |---|---|---|---|
 | **1** | **纯 Go 零依赖** | 严格保持 `CGO_ENABLED=0` 静态编译；仅使用标准库及已批准的纯 Go 驱动（`golang.org/x/crypto`、`pkg/sftp`、`gopkg.in/yaml.v3`、`golang.org/x/text`）。 | 严禁引入任何需要 GCC 链接或 CGO 的依赖包。 |
-| **2** | **前端零构建链** | `web/static/index.html` 必须为单文件自包含 SPA（原生 HTML5/CSS3/ES6+ JS），由 Go `embed.FS` 嵌入分发。 | 严禁引入 `package.json`、Node.js、npm/yarn/pnpm、Vite、Webpack 或外挂前端构建流程。 |
+| **2** | **前端零构建链** | `web/static/` 为原生多文件 SPA（HTML5/CSS3/ES6+ JS，按职责拆分为 css/ 与 js/ 目录），由 Go `embed.FS` 原样嵌入分发；脚本共享全局命名空间，按依赖顺序以 `<script>` 引入。 | 严禁引入 `package.json`、Node.js、npm/yarn/pnpm、Vite、Webpack 或任何打包/转译构建流程。 |
 | **3** | **Context 全链路穿透** | 所有命令执行、网络请求、流水线阶段函数必须接收并监听 `ctx context.Context`；每阶段执行前必须调用 `if err := ctx.Err(); err != nil` 进行中断拦截。 | 严禁忽略 `ctx.Done()`，严禁在取消后继续派生后台孤儿 Goroutine 或残留僵尸子进程。 |
 | **4** | **并发 Worker Pool 限流** | 并发部署必须严格经由有限容量信号量通道（`chan struct{}`，默认容量 10 或 `-j` 指定）调度管控。 | 严禁在无节制循环中直接 `go RunServicePipeline(...)`，防止文件描述符（FD）耗尽或 SSH 服务被封禁。 |
 | **5** | **Web 服务默认回环与重入锁** | 默认监听地址固定为本地回环 `127.0.0.1:8080`；部署触发端点必须使用 `atomic.Bool`（`CompareAndSwap`）防并发重入，冲突时返回 `409 Conflict`；SSE 队列缓冲 $\ge 1024$。 | 严禁将默认绑定改回 `0.0.0.0` 或 `:8080`；严禁允许多个部署任务并发重叠操作同一配置目标。 |

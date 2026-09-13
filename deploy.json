@@ -1,17 +1,17 @@
 {
   "parallel": true,
   "hooks": {},
-  "groups": [
+  "tagHooks": [
     {
       "name": "backend",
       "description": "后端微服务集群（本地仅编译一次，并发分发至所有节点）",
       "hooks": {
         "preDeploy": [
-          "echo '==\u003e [Backend Global] 进入本地后端目录并执行 Maven 打包（仅执行一次）...'",
+          "echo \"==\u003e [Backend Global] 进入本地后端目录并执行 Maven 打包（仅执行一次）\"...",
           "cd D:/projects/my-backend \u0026\u0026 mvn clean package -DskipTests"
         ],
         "postDeploy": [
-          "echo '==\u003e [Backend Global] 后端微服务集群所有节点部署完毕！'"
+          "echo \"==\u003e [Backend Global] 后端微服务集群所有节点部署完毕！\""
         ]
       }
     },
@@ -20,43 +20,19 @@
       "description": "前端集群（本地仅构建压缩一次，并发分发解压至所有节点）",
       "hooks": {
         "preDeploy": [
-          "echo '==\u003e [Frontend Global] 进入本地前端目录打包并压缩 dist（仅执行一次）...'",
+          "echo \"==\u003e [Frontend Global] 进入本地前端目录打包并压缩 dist（仅执行一次）\"...",
           "cd D:/projects/my-frontend \u0026\u0026 npm run build \u0026\u0026 tar -czf dist.tar.gz -C dist ."
         ],
         "postDeploy": [
-          "echo '==\u003e [Frontend Global] 前端集群所有节点静态资源更新完毕！'"
+          "echo \"==\u003e [Frontend Global] 前端集群所有节点静态资源更新完毕！\""
         ]
       }
-    }
-  ],
-  "scenarios": [
-    {
-      "name": "all",
-      "description": "全量发布（先发布后端集群，再发布前端集群）",
-      "groups": [
-        "backend",
-        "frontend"
-      ]
-    },
-    {
-      "name": "backend-only",
-      "description": "仅发布后端微服务集群",
-      "groups": [
-        "backend"
-      ]
-    },
-    {
-      "name": "frontend-only",
-      "description": "仅发布前端集群",
-      "groups": [
-        "frontend"
-      ]
     }
   ],
   "services": [
     {
       "name": "backend-node-01",
-      "group": "backend",
+      "tags": ["backend"],
       "type": "standard",
       "stage": 1,
       "server": {
@@ -72,12 +48,12 @@
       },
       "hooks": {
         "preUploadRemote": [
-          "echo '==\u003e [Backend Node-1] 备份旧版 jar 包（时间后缀）...'",
+          "echo \"==\u003e [Backend Node-1] 备份旧版 jar 包（时间后缀）\"...",
           "mkdir -p /opt/backend/backup",
           "[ -f /opt/backend/app.jar ] \u0026\u0026 cp /opt/backend/app.jar /opt/backend/backup/app_$(date +%Y%m%d_%H%M%S).jar || true"
         ],
         "postUploadRemote": [
-          "echo '==\u003e [Backend Node-1] 执行启动脚本...'",
+          "echo \"==\u003e [Backend Node-1] 执行启动脚本\"...",
           "cd /opt/backend \u0026\u0026 chmod +x start.sh \u0026\u0026 sh start.sh"
         ]
       },
@@ -85,7 +61,7 @@
     },
     {
       "name": "backend-node-02",
-      "group": "backend",
+      "tags": ["backend"],
       "type": "standard",
       "stage": 1,
       "server": {
@@ -101,12 +77,12 @@
       },
       "hooks": {
         "preUploadRemote": [
-          "echo '==\u003e [Backend Node-2] 备份旧版 jar 包（时间后缀）...'",
+          "echo \"==\u003e [Backend Node-2] 备份旧版 jar 包（时间后缀）\"...",
           "mkdir -p /opt/backend/backup",
           "[ -f /opt/backend/app.jar ] \u0026\u0026 cp /opt/backend/app.jar /opt/backend/backup/app_$(date +%Y%m%d_%H%M%S).jar || true"
         ],
         "postUploadRemote": [
-          "echo '==\u003e [Backend Node-2] 执行启动脚本...'",
+          "echo \"==\u003e [Backend Node-2] 执行启动脚本\"...",
           "cd /opt/backend \u0026\u0026 chmod +x start.sh \u0026\u0026 sh start.sh"
         ]
       },
@@ -114,7 +90,7 @@
     },
     {
       "name": "frontend-node-01",
-      "group": "frontend",
+      "tags": ["frontend", "web"],
       "type": "standard",
       "stage": 2,
       "server": {
@@ -130,14 +106,14 @@
       },
       "hooks": {
         "preUploadRemote": [
-          "echo '==\u003e [Frontend Node-1] 压缩并备份当前 dist 目录（时间后缀）...'",
+          "echo \"==\u003e [Frontend Node-1] 压缩并备份当前 dist 目录（时间后缀）\"...",
           "mkdir -p /var/www/backup /var/www/html",
           "[ -d /var/www/html/dist ] \u0026\u0026 tar -czf /var/www/backup/dist_$(date +%Y%m%d_%H%M%S).tar.gz -C /var/www/html dist || true",
           "rm -rf /var/www/html/dist",
           "mkdir -p /var/www/html/dist"
         ],
         "postUploadRemote": [
-          "echo '==\u003e [Frontend Node-1] 解压新版 dist 压缩包并平滑重载 Nginx...'",
+          "echo \"==\u003e [Frontend Node-1] 解压新版 dist 压缩包并平滑重载 Nginx\"...",
           "tar -xzf /var/www/html/dist.tar.gz -C /var/www/html/dist",
           "rm -f /var/www/html/dist.tar.gz",
           "nginx -s reload || systemctl reload nginx || true"
@@ -147,7 +123,7 @@
     },
     {
       "name": "frontend-node-02",
-      "group": "frontend",
+      "tags": ["frontend", "web"],
       "type": "standard",
       "stage": 2,
       "server": {
@@ -163,14 +139,14 @@
       },
       "hooks": {
         "preUploadRemote": [
-          "echo '==\u003e [Frontend Node-2] 压缩并备份当前 dist 目录（时间后缀）...'",
+          "echo \"==\u003e [Frontend Node-2] 压缩并备份当前 dist 目录（时间后缀）\"...",
           "mkdir -p /var/www/backup /var/www/html",
           "[ -d /var/www/html/dist ] \u0026\u0026 tar -czf /var/www/backup/dist_$(date +%Y%m%d_%H%M%S).tar.gz -C /var/www/html dist || true",
           "rm -rf /var/www/html/dist",
           "mkdir -p /var/www/html/dist"
         ],
         "postUploadRemote": [
-          "echo '==\u003e [Frontend Node-2] 解压新版 dist 压缩包并平滑重载 Nginx...'",
+          "echo \"==\u003e [Frontend Node-2] 解压新版 dist 压缩包并平滑重载 Nginx\"...",
           "tar -xzf /var/www/html/dist.tar.gz -C /var/www/html/dist",
           "rm -f /var/www/html/dist.tar.gz",
           "nginx -s reload || systemctl reload nginx || true"

@@ -74,16 +74,16 @@ func TestWebServerEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read saved file: %v", err)
 	}
-		if !strings.Contains(string(savedBytes), "api-web-test") {
-			t.Errorf("saved config missing 'api-web-test'")
-		}
+	if !strings.Contains(string(savedBytes), "api-web-test") {
+		t.Errorf("saved config missing 'api-web-test'")
 	}
+}
 
-	func TestDeployConcurrencyConflict(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
+func TestDeployConcurrencyConflict(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
 
-		cfgJSON := `{
+	cfgJSON := `{
 			"services": [
 				{
 					"name": "mock-svc",
@@ -95,32 +95,32 @@ func TestWebServerEndpoints(t *testing.T) {
 				}
 			]
 		}`
-		if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
-			t.Fatalf("failed to write config: %v", err)
-		}
-
-		srv := NewServer(":0", configPath)
-		// 模拟当前已有任务在部署中
-		srv.isDeploying.Store(true)
-
-		req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(`{}`))
-		w := httptest.NewRecorder()
-		srv.handleDeploy(w, req)
-
-		if w.Code != http.StatusConflict {
-			t.Fatalf("expected HTTP 409 Conflict when already deploying, got %d", w.Code)
-		}
-		if !strings.Contains(w.Body.String(), "already running") {
-			t.Errorf("expected error message to contain 'already running', got %q", w.Body.String())
-		}
+	if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
 	}
 
-	func TestConfigMaskAndPreserveOnSave(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
+	srv := NewServer(":0", configPath)
+	// 模拟当前已有任务在部署中
+	srv.isDeploying.Store(true)
 
-		// 初始写入包含环境变量占位符与真实敏感密码的配置
-		initJSON := `{
+	req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.handleDeploy(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict when already deploying, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "already running") {
+		t.Errorf("expected error message to contain 'already running', got %q", w.Body.String())
+	}
+}
+
+func TestConfigMaskAndPreserveOnSave(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+
+	// 初始写入包含环境变量占位符与真实敏感密码的配置
+	initJSON := `{
 			"services": [
 				{
 					"name": "secret-svc",
@@ -133,146 +133,146 @@ func TestWebServerEndpoints(t *testing.T) {
 				}
 			]
 		}`
-		if err := os.WriteFile(configPath, []byte(initJSON), 0644); err != nil {
-			t.Fatalf("failed to write initial config: %v", err)
-		}
-
-		srv := NewServer(":0", configPath)
-
-		// 1. 测试 GET /api/config 是否成功脱敏为 ******，不泄露环境变量占位符或明文
-		reqGet := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-		wGet := httptest.NewRecorder()
-		srv.handleConfig(wGet, reqGet)
-
-		if wGet.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d", wGet.Code)
-		}
-
-		var getResp config.DeployConfig
-		if err := json.Unmarshal(wGet.Body.Bytes(), &getResp); err != nil {
-			t.Fatalf("failed to decode GET resp: %v", err)
-		}
-		if getResp.Services[0].Server.Password != config.MaskSecret {
-			t.Errorf("expected password to be masked as %s, got %s", config.MaskSecret, getResp.Services[0].Server.Password)
-		}
-		if getResp.Services[0].Server.Passphrase != config.MaskSecret {
-			t.Errorf("expected passphrase to be masked as %s, got %s", config.MaskSecret, getResp.Services[0].Server.Passphrase)
-		}
-
-		// 2. 前端表单在掩码未修改的情况下点击保存 (POST /api/config)，验证原密码/环境变量不被冲掉
-		wGetRespBody := wGet.Body.String()
-		reqPost := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(wGetRespBody))
-		wPost := httptest.NewRecorder()
-		srv.handleConfig(wPost, reqPost)
-
-		if wPost.Code != http.StatusOK {
-			t.Fatalf("expected status 200 on post, got %d: %s", wPost.Code, wPost.Body.String())
-		}
-
-		// 验证磁盘写入的文件保留了 ${SERVER_PWD_FROM_ENV}
-		savedBytes, err := os.ReadFile(configPath)
-		if err != nil {
-			t.Fatalf("failed to read config file: %v", err)
-		}
-		savedContent := string(savedBytes)
-		if !strings.Contains(savedContent, "${SERVER_PWD_FROM_ENV}") {
-			t.Errorf("expected saved file to preserve '${SERVER_PWD_FROM_ENV}', got:\n%s", savedContent)
-		}
-		if !strings.Contains(savedContent, "real-passphrase") {
-			t.Errorf("expected saved file to preserve 'real-passphrase', got:\n%s", savedContent)
-		}
+	if err := os.WriteFile(configPath, []byte(initJSON), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
 	}
 
-	func TestDeployCancelEndpoint(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
-		srv := NewServer(":0", configPath)
+	srv := NewServer(":0", configPath)
 
-		// 1. 当前无任务时请求取消应返回 400 Bad Request
-		reqCancel := httptest.NewRequest(http.MethodPost, "/api/deploy/cancel", nil)
-		wCancel := httptest.NewRecorder()
-		srv.handleDeployCancel(wCancel, reqCancel)
+	// 1. 测试 GET /api/config 是否成功脱敏为 ******，不泄露环境变量占位符或明文
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	wGet := httptest.NewRecorder()
+	srv.handleConfig(wGet, reqGet)
 
-		if wCancel.Code != http.StatusBadRequest {
-			t.Errorf("expected HTTP 400 when no task running, got %d", wCancel.Code)
-		}
-
-		// 2. 模拟有任务正在运行并测试取消
-		canceled := false
-		srv.deployMu.Lock()
-		srv.deployCancel = func() {
-			canceled = true
-		}
-		srv.deployMu.Unlock()
-
-		wCancel2 := httptest.NewRecorder()
-		srv.handleDeployCancel(wCancel2, reqCancel)
-
-		if wCancel2.Code != http.StatusOK {
-			t.Errorf("expected HTTP 200 when canceling running task, got %d", wCancel2.Code)
-		}
-		if !canceled {
-			t.Errorf("expected cancelFunc to be invoked")
-		}
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", wGet.Code)
 	}
 
-	func TestServerGracefulShutdown(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
-		srv := NewServer("127.0.0.1:0", configPath)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		serverErr := make(chan error, 1)
-
-		go func() {
-			serverErr <- srv.StartContext(ctx, false)
-		}()
-
-		// 等待服务器启动监听
-		time.Sleep(100 * time.Millisecond)
-
-		// 触发上下文取消
-		cancel()
-
-		select {
-		case err := <-serverErr:
-			if err != nil && err != http.ErrServerClosed {
-				t.Errorf("unexpected error on graceful shutdown: %v", err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Errorf("server graceful shutdown timed out")
-		}
+	var getResp config.DeployConfig
+	if err := json.Unmarshal(wGet.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("failed to decode GET resp: %v", err)
+	}
+	if getResp.Services[0].Server.Password != config.MaskSecret {
+		t.Errorf("expected password to be masked as %s, got %s", config.MaskSecret, getResp.Services[0].Server.Password)
+	}
+	if getResp.Services[0].Server.Passphrase != config.MaskSecret {
+		t.Errorf("expected passphrase to be masked as %s, got %s", config.MaskSecret, getResp.Services[0].Server.Passphrase)
 	}
 
-	func TestDeployHTTPMethodsAndInvalidConfig(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
-		srv := NewServer(":0", configPath)
+	// 2. 前端表单在掩码未修改的情况下点击保存 (POST /api/config)，验证原密码/环境变量不被冲掉
+	wGetRespBody := wGet.Body.String()
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(wGetRespBody))
+	wPost := httptest.NewRecorder()
+	srv.handleConfig(wPost, reqPost)
 
-		// 1. 测试 GET 请求 /api/deploy 应返回 405 Method Not Allowed
-		reqGet := httptest.NewRequest(http.MethodGet, "/api/deploy", nil)
-		wGet := httptest.NewRecorder()
-		srv.handleDeploy(wGet, reqGet)
-		if wGet.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405 for GET /api/deploy, got %d", wGet.Code)
-		}
-
-		// 2. 测试 GET 请求 /api/deploy/cancel 应返回 405 Method Not Allowed
-		reqCancelGet := httptest.NewRequest(http.MethodGet, "/api/deploy/cancel", nil)
-		wCancelGet := httptest.NewRecorder()
-		srv.handleDeployCancel(wCancelGet, reqCancelGet)
-		if wCancelGet.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405 for GET /api/deploy/cancel, got %d", wCancelGet.Code)
-		}
-
-		// 3. 测试配置文件不存在时的 POST /api/deploy 应返回 500
-		reqPost := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(`{}`))
-		wPost := httptest.NewRecorder()
-		srv.handleDeploy(wPost, reqPost)
-		if wPost.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 when config missing, got %d", wPost.Code)
-		}
+	if wPost.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on post, got %d: %s", wPost.Code, wPost.Body.String())
 	}
+
+	// 验证磁盘写入的文件保留了 ${SERVER_PWD_FROM_ENV}
+	savedBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+	savedContent := string(savedBytes)
+	if !strings.Contains(savedContent, "${SERVER_PWD_FROM_ENV}") {
+		t.Errorf("expected saved file to preserve '${SERVER_PWD_FROM_ENV}', got:\n%s", savedContent)
+	}
+	if !strings.Contains(savedContent, "real-passphrase") {
+		t.Errorf("expected saved file to preserve 'real-passphrase', got:\n%s", savedContent)
+	}
+}
+
+func TestDeployCancelEndpoint(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+	srv := NewServer(":0", configPath)
+
+	// 1. 当前无任务时请求取消应返回 400 Bad Request
+	reqCancel := httptest.NewRequest(http.MethodPost, "/api/deploy/cancel", nil)
+	wCancel := httptest.NewRecorder()
+	srv.handleDeployCancel(wCancel, reqCancel)
+
+	if wCancel.Code != http.StatusBadRequest {
+		t.Errorf("expected HTTP 400 when no task running, got %d", wCancel.Code)
+	}
+
+	// 2. 模拟有任务正在运行并测试取消
+	canceled := false
+	srv.deployMu.Lock()
+	srv.deployCancel = func() {
+		canceled = true
+	}
+	srv.deployMu.Unlock()
+
+	wCancel2 := httptest.NewRecorder()
+	srv.handleDeployCancel(wCancel2, reqCancel)
+
+	if wCancel2.Code != http.StatusOK {
+		t.Errorf("expected HTTP 200 when canceling running task, got %d", wCancel2.Code)
+	}
+	if !canceled {
+		t.Errorf("expected cancelFunc to be invoked")
+	}
+}
+
+func TestServerGracefulShutdown(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+	srv := NewServer("127.0.0.1:0", configPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	serverErr := make(chan error, 1)
+
+	go func() {
+		serverErr <- srv.StartContext(ctx, false)
+	}()
+
+	// 等待服务器启动监听
+	time.Sleep(100 * time.Millisecond)
+
+	// 触发上下文取消
+	cancel()
+
+	select {
+	case err := <-serverErr:
+		if err != nil && err != http.ErrServerClosed {
+			t.Errorf("unexpected error on graceful shutdown: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Errorf("server graceful shutdown timed out")
+	}
+}
+
+func TestDeployHTTPMethodsAndInvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+	srv := NewServer(":0", configPath)
+
+	// 1. 测试 GET 请求 /api/deploy 应返回 405 Method Not Allowed
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/deploy", nil)
+	wGet := httptest.NewRecorder()
+	srv.handleDeploy(wGet, reqGet)
+	if wGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /api/deploy, got %d", wGet.Code)
+	}
+
+	// 2. 测试 GET 请求 /api/deploy/cancel 应返回 405 Method Not Allowed
+	reqCancelGet := httptest.NewRequest(http.MethodGet, "/api/deploy/cancel", nil)
+	wCancelGet := httptest.NewRecorder()
+	srv.handleDeployCancel(wCancelGet, reqCancelGet)
+	if wCancelGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET /api/deploy/cancel, got %d", wCancelGet.Code)
+	}
+
+	// 3. 测试配置文件不存在时的 POST /api/deploy 应返回 500
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(`{}`))
+	wPost := httptest.NewRecorder()
+	srv.handleDeploy(wPost, reqPost)
+	if wPost.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when config missing, got %d", wPost.Code)
+	}
+}
 
 func TestSSEBroadcastAndReceive(t *testing.T) {
 	msgChan := make(chan sseMessage, 10)
@@ -347,21 +347,15 @@ func TestSSELastEventIDReplay(t *testing.T) {
 	}
 }
 
-	func TestDeployWithScenarioAndGroupPayload(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "deploy.json")
+func TestDeployWithTagsPayload(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
 
-		cfgJSON := `{
-			"scenarios": [
-				{
-					"name": "prod",
-					"groups": ["backend"]
-				}
-			],
+	cfgJSON := `{
 			"services": [
 				{
 					"name": "api-svc",
-					"group": "backend",
+					"tags": ["backend"],
 					"type": "standard",
 					"server": {
 						"host": "127.0.0.1",
@@ -371,14 +365,14 @@ func TestSSELastEventIDReplay(t *testing.T) {
 				}
 			]
 		}`
-		if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
-			t.Fatalf("failed to write config: %v", err)
-		}
+	if err := os.WriteFile(configPath, []byte(cfgJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	srv := NewServer(":0", configPath)
 
-	// 触发带 scenario 和 targetGroups 的部署请求
-	reqBody := `{"scenario":"prod","targetGroups":["backend"],"targetTypes":["standard"]}`
+	// 触发带 tags 标签筛选的部署请求（并集语义）
+	reqBody := `{"tags":["backend"],"targetTypes":["standard"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/deploy", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 	srv.handleDeploy(w, req)
@@ -465,10 +459,10 @@ func TestHandleTestConnect(t *testing.T) {
 	if res["status"] != "error" {
 		t.Errorf("expected status 'error' for unreachable port, got %v", res["status"])
 	}
-		if res["error"] == nil || res["error"] == "" {
-			t.Errorf("expected non-empty error message, got nil")
-		}
+	if res["error"] == nil || res["error"] == "" {
+		t.Errorf("expected non-empty error message, got nil")
 	}
+}
 
 func TestHandlePickPathMethodGuard(t *testing.T) {
 	srv := NewServer(":0", "deploy.json")
@@ -621,4 +615,111 @@ func TestWorkspaceEndpointsAndImportToDefault(t *testing.T) {
 	}
 }
 
+// TestStaticHandlerDevMode 验证静态资源处理器的三种形态：
+// 1. 默认（非开发模式）：返回编译期内嵌资源；
+// 2. 开发模式（DEPLOY_DEV=1）且磁盘目录存在：直读磁盘，改动无需重编译即可生效；
+// 3. 开发模式但磁盘目录缺失：自动回退内嵌资源，保证服务可用。
+func TestStaticHandlerDevMode(t *testing.T) {
+	// 1. 未开启开发模式：内嵌资源
+	h, err := newStaticHandler(devStaticDir, false)
+	if err != nil {
+		t.Fatalf("failed to build embedded handler: %v", err)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Multi-Service Deployer") {
+		t.Fatalf("expected embedded index to be served, got %d", w.Code)
+	}
 
+	// 2. 开发模式且磁盘目录存在：直读磁盘内容（磁盘标记内容与内嵌版本不同）
+	devRoot := t.TempDir()
+	diskStaticDir := filepath.Join(devRoot, "static")
+	if err := os.MkdirAll(diskStaticDir, 0o755); err != nil {
+		t.Fatalf("failed to create dev static dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(diskStaticDir, "index.html"), []byte("<html>dev-disk-marker</html>"), 0o644); err != nil {
+		t.Fatalf("failed to write dev index: %v", err)
+	}
+	h, err = newStaticHandler(diskStaticDir, true)
+	if err != nil {
+		t.Fatalf("failed to build dev handler: %v", err)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "dev-disk-marker") {
+		t.Fatalf("expected index served from disk in dev mode, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 3. 开发模式但磁盘目录缺失：回退内嵌资源
+	h, err = newStaticHandler(filepath.Join(devRoot, "missing"), true)
+	if err != nil {
+		t.Fatalf("failed to build fallback handler: %v", err)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Multi-Service Deployer") {
+		t.Fatalf("expected fallback to embedded index when dev dir missing, got %d", w.Code)
+	}
+}
+
+// TestConfigSaveWithTagHooks 验证 Web 配置保存链路对标签钩子的支持：
+// POST 携带 tagHooks 与服务 tags 正常落盘，旧 group 字段不再持久化，GET 脱敏视图可见 tagHooks。
+func TestConfigSaveWithTagHooks(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "deploy.json")
+
+	initial := `{"services":[{"name":"svc-a","group":"backend","server":{"host":"127.0.0.1","username":"root","password":"pwd"}}]}`
+	if err := os.WriteFile(configPath, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	srv := NewServer(":0", configPath)
+
+	newCfg := `{
+		"tagHooks":[{"name":"backend","description":"后端集群","hooks":{"preDeploy":["go build"]}}],
+		"services":[{"name":"svc-a","tags":["backend","core"],"server":{"host":"127.0.0.1","username":"root","password":"******"}}]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(newCfg))
+	w := httptest.NewRecorder()
+	srv.handleConfig(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on config save, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 落盘校验：tagHooks 持久化，旧 group 字段被迁移清除
+	found := false
+	_ = filepath.WalkDir(tmpDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		if strings.Contains(string(data), `"tagHooks"`) && strings.Contains(string(data), "go build") {
+			found = true
+			if strings.Contains(string(data), `"group"`) {
+				t.Errorf("expected legacy group field dropped in %s, got: %s", path, data)
+			}
+		}
+		return nil
+	})
+	if !found {
+		t.Errorf("expected tagHooks persisted under %s", tmpDir)
+	}
+
+	// GET 脱敏视图：tagHooks 可见，掩码密码不泄露原值
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	wGet := httptest.NewRecorder()
+	srv.handleConfig(wGet, reqGet)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 on config get, got %d", wGet.Code)
+	}
+	body := wGet.Body.String()
+	if !strings.Contains(body, "tagHooks") || !strings.Contains(body, "backend") {
+		t.Errorf("expected GET config to expose tagHooks, got: %s", body)
+	}
+	if strings.Contains(body, `"pwd"`) {
+		t.Errorf("expected masked password in GET config, got: %s", body)
+	}
+}

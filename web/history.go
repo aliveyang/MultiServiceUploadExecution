@@ -105,7 +105,7 @@ func (c *batchCollector) observe(name string, payload any) {
 		c.rec = &deployer.BatchRecord{
 			ID:        started.ID,
 			Workspace: started.Workspace,
-			Scenario:  started.Scenario,
+			Tags:      started.Tags,
 			Start:     now,
 			Total:     started.Total,
 			Status:    deployer.BatchStatusFailed,
@@ -233,16 +233,16 @@ func (c *batchCollector) persistLocked() {
 
 // batchSummary 历史列表条目（不含节点明细，降低列表负载）
 type batchSummary struct {
-	ID         string `json:"id"`
-	Workspace  string `json:"workspace,omitempty"`
-	Scenario   string `json:"scenario,omitempty"`
-	Start      string `json:"start"`
-	End        string `json:"end"`
-	DurationMs int64  `json:"durationMs"`
-	Total      int    `json:"total"`
-	Success    int    `json:"success"`
-	Failed     int    `json:"failed"`
-	Status     string `json:"status"`
+	ID         string   `json:"id"`
+	Workspace  string   `json:"workspace,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Start      string   `json:"start"`
+	End        string   `json:"end"`
+	DurationMs int64    `json:"durationMs"`
+	Total      int      `json:"total"`
+	Success    int      `json:"success"`
+	Failed     int      `json:"failed"`
+	Status     string   `json:"status"`
 }
 
 // handleDeployHistory GET 批次部署历史列表（?workspace=&limit=，默认最近 30 批）
@@ -271,7 +271,7 @@ func (s *Server) handleDeployHistory(w http.ResponseWriter, r *http.Request) {
 		list = append(list, batchSummary{
 			ID:         rec.ID,
 			Workspace:  rec.Workspace,
-			Scenario:   rec.Scenario,
+			Tags:       rec.Tags,
 			Start:      rec.Start.Format(time.RFC3339),
 			End:        rec.End.Format(time.RFC3339),
 			DurationMs: rec.DurationMs,

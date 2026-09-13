@@ -107,7 +107,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// 安全红线：不设置 CORS 头。控制台仅服务同源页面，禁止任意网页跨域读取部署日志流。
 
 	// EventSource 自动重连时会携带 Last-Event-ID 请求头，重放其后的缓冲事件
 	var since uint64

@@ -21,13 +21,14 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-// ExecuteLocalCommand 在本地执行单条命令行，并实时输出日志（向后兼容）
-func ExecuteLocalCommand(command string, log *logger.ServiceLogger) error {
-	return ExecuteLocalCommandContext(context.Background(), command, log)
-}
-
 // ExecuteLocalCommandContext 在本地执行单条命令行，支持 context 取消
 func ExecuteLocalCommandContext(ctx context.Context, command string, log *logger.ServiceLogger) error {
+	return ExecuteLocalCommandEnvContext(ctx, command, log, nil)
+}
+
+// ExecuteLocalCommandEnvContext 在本地执行单条命令行，在继承父进程环境的基础上追加 extraEnv
+// （用于批次钩子的上下文变量注入），支持 context 取消
+func ExecuteLocalCommandEnvContext(ctx context.Context, command string, log *logger.ServiceLogger, extraEnv []string) error {
 	log.Info("[Local Exec] %s", command)
 
 	var cmd *exec.Cmd
@@ -37,6 +38,9 @@ func ExecuteLocalCommandContext(ctx context.Context, command string, log *logger
 		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", "chcp 65001 >nul 2>&1 && "+command)
 	} else {
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+	}
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -84,11 +88,6 @@ type SSHClient struct {
 	client *ssh.Client
 	server config.ServerConfig
 	log    *logger.ServiceLogger
-}
-
-// NewSSHClient 创建并建立 SSH 连接（向后兼容）
-func NewSSHClient(server config.ServerConfig, log *logger.ServiceLogger) (*SSHClient, error) {
-	return NewSSHClientContext(context.Background(), server, log)
 }
 
 // NewSSHClientContext 创建并建立 SSH 连接，支持 Context 控制超时与中断
@@ -187,11 +186,6 @@ func TestSSHConnectivity(ctx context.Context, server config.ServerConfig, log *l
 		return err
 	}
 	return client.Close()
-}
-
-// ExecuteRemoteCommand 在远程服务器上执行单条命令，实时流式输出（向后兼容）
-func (s *SSHClient) ExecuteRemoteCommand(command string) error {
-	return s.ExecuteRemoteCommandContext(context.Background(), command)
 }
 
 // ExecuteRemoteCommandContext 在远程服务器上执行单条命令，支持 Context 控制与优雅中断

@@ -7,9 +7,18 @@ import (
 	"testing"
 )
 
-func TestServiceLoggerThreadSafety(t *testing.T) {
+// captureLog 临时接管全局 OnLog 回调，将日志行收集到缓冲（write 持锁串行调用，无需额外加锁）
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
 	buf := &bytes.Buffer{}
-	SetOutput(buf)
+	prev := OnLog
+	OnLog = func(line string) { buf.WriteString(line + "\n") }
+	t.Cleanup(func() { OnLog = prev })
+	return buf
+}
+
+func TestServiceLoggerThreadSafety(t *testing.T) {
+	buf := captureLog(t)
 
 	log1 := NewServiceLogger("service-1", 0)
 	log2 := NewServiceLogger("service-2", 1)

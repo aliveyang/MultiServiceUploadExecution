@@ -39,13 +39,6 @@ type Logger struct {
 
 var defaultLogger = &Logger{out: os.Stdout}
 
-// SetOutput 设置全局日志输出
-func SetOutput(w io.Writer) {
-	defaultLogger.mu.Lock()
-	defer defaultLogger.mu.Unlock()
-	defaultLogger.out = w
-}
-
 // write 在锁内输出一行日志并触发回调
 func (l *Logger) write(formatted string) {
 	l.mu.Lock()
@@ -67,7 +60,9 @@ func logf(color, tag, format string, args ...interface{}) {
 func System(format string, args ...interface{}) { logf(ColorBold+ColorBlue, "DEPLOY", format, args...) }
 
 // Success 输出全局成功信息
-func Success(format string, args ...interface{}) { logf(ColorBold+ColorGreen, "SUCCESS", format, args...) }
+func Success(format string, args ...interface{}) {
+	logf(ColorBold+ColorGreen, "SUCCESS", format, args...)
+}
 
 // Error 输出全局错误信息
 func Error(format string, args ...interface{}) { logf(ColorBold+ColorRed, "ERROR", format, args...) }

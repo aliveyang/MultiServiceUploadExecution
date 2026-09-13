@@ -65,14 +65,17 @@ func (u *SFTPUploader) Upload(cfg config.UploadConfig) (*UploadStats, error) {
 	startTime := time.Now()
 	stats := &UploadStats{}
 
-		// 可选：清理远端目录
-		if cfg.CleanRemote {
-			if config.IsDangerousRemotePath(remotePath) {
-				return nil, fmt.Errorf("refusing to clean dangerous remote path %q", remotePath)
-			}
-			u.log.Info("Cleaning remote path: %s", remotePath)
-			_ = u.sftpClient.RemoveAll(remotePath)
+	// 可选：清理远端目录
+	if cfg.CleanRemote {
+		if config.IsDangerousRemotePath(remotePath) {
+			return nil, fmt.Errorf("refusing to clean dangerous remote path %q", remotePath)
 		}
+		u.log.Info("Cleaning remote path: %s", remotePath)
+		// 清理失败必须中止：向未清空的目录续传会造成新旧文件混杂
+		if err := u.sftpClient.RemoveAll(remotePath); err != nil {
+			return nil, fmt.Errorf("failed to clean remote path %q: %w", remotePath, err)
+		}
+	}
 
 	if localInfo.IsDir() {
 		u.log.Info("Uploading directory [SFTP]: %s -> %s", localPath, remotePath)

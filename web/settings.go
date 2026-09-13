@@ -12,7 +12,6 @@ import (
 // settingsView GET 返回的运行时设置视图（合并默认值与监听地址的生效状态）
 type settingsView struct {
 	MaxWorkers        int    `json:"maxWorkers"`
-	ConnectTimeout    int    `json:"connectTimeout"`
 	ListenAddr        string `json:"listenAddr"`        // 当前生效的监听地址
 	ListenAddrSetting string `json:"listenAddrSetting"` // settings.json 中保存的监听地址（为空表示使用默认）
 	ListenAddrRestart bool   `json:"listenAddrRestart"` // 已保存的监听地址与当前生效值不一致，需重启生效
@@ -58,7 +57,6 @@ func (s *Server) writeSettingsView(w http.ResponseWriter) {
 
 	view := settingsView{
 		MaxWorkers:        st.MaxWorkers,
-		ConnectTimeout:    st.ConnectTimeout,
 		ListenAddr:        s.addr,
 		ListenAddrSetting: strings.TrimSpace(st.ListenAddr),
 		AutoOpenBrowser:   st.AutoOpenBrowser == nil || *st.AutoOpenBrowser,
@@ -66,9 +64,6 @@ func (s *Server) writeSettingsView(w http.ResponseWriter) {
 	}
 	if view.MaxWorkers <= 0 {
 		view.MaxWorkers = config.DefaultMaxWorkers
-	}
-	if view.ConnectTimeout <= 0 {
-		view.ConnectTimeout = config.DefaultConnectTimeout
 	}
 	view.ListenAddrRestart = view.ListenAddrSetting != "" && view.ListenAddrSetting != s.addr
 

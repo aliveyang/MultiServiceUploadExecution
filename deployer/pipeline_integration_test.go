@@ -1,6 +1,7 @@
 package deployer
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -173,7 +174,7 @@ func TestEndToEndPipeline(t *testing.T) {
 		},
 	}
 
-	result := RunServicePipeline(svc, 0)
+	result := RunServicePipelineContext(context.Background(), svc, 0)
 	if !result.Success {
 		t.Fatalf("expected pipeline to succeed, got error: %v", result.Error)
 	}
@@ -248,7 +249,7 @@ func TestMultiServiceParallelDeployment(t *testing.T) {
 
 	mgr := NewDeployManager(cfg, DeployOptions{})
 	start := time.Now()
-	allSuccess, err := mgr.Run()
+	allSuccess, err := mgr.RunWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("manager Run failed: %v", err)
 	}
@@ -264,5 +265,84 @@ func TestMultiServiceParallelDeployment(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(remoteDir2, "dest-node-2", "file.txt")); err != nil {
 		t.Errorf("node 2 destination file missing: %v", err)
+	}
+}
+
+// TestTagBatchHooksEndToEnd 验证标签批次钩子端到端语义：
+// pre 钩子在批次开始前执行一次；post 钩子在该标签全部节点成功后执行一次；
+// 多标签服务（backend+data）同时计入两个标签的完成计数。
+func TestTagBatchHooksEndToEnd(t *testing.T) {
+	remoteDir := t.TempDir()
+	port, cleanup := startMockSSHServer(t, remoteDir)
+	defer cleanup()
+
+	preMarker := filepath.Join(t.TempDir(), "pre-marker.txt")
+	postMarker := filepath.Join(t.TempDir(), "post-marker.txt")
+	dataPostMarker := filepath.Join(t.TempDir(), "data-post-marker.txt")
+
+	localDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(localDir, "app.txt"), []byte("tag hooks e2e"), 0644)
+
+	cfg := &config.DeployConfig{
+		TagHooks: []config.TagHookConfig{
+			{
+				Name: "backend",
+				Hooks: config.BatchHooks{
+					PreDeploy:  config.CommandList{"type nul > " + preMarker},
+					PostDeploy: config.CommandList{"type nul > " + postMarker},
+				},
+			},
+			{
+				Name: "data",
+				Hooks: config.BatchHooks{
+					PostDeploy: config.CommandList{"type nul > " + dataPostMarker},
+				},
+			},
+		},
+		Services: []config.ServiceConfig{
+			{
+				Name: "tagged-node-1",
+				Tags: []string{"backend", "data"}, // 多标签：同时计入 backend 与 data 的计数
+				Server: config.ServerConfig{
+					Host:     "127.0.0.1",
+					Port:     port,
+					Username: "testuser",
+					Password: "testpass",
+				},
+				Upload: config.UploadConfig{
+					LocalPath:  localDir,
+					RemotePath: "dest-tagged-1",
+				},
+			},
+			{
+				Name: "tagged-node-2",
+				Tags: []string{"backend"},
+				Server: config.ServerConfig{
+					Host:     "127.0.0.1",
+					Port:     port,
+					Username: "testuser",
+					Password: "testpass",
+				},
+				Upload: config.UploadConfig{
+					LocalPath:  localDir,
+					RemotePath: "dest-tagged-2",
+				},
+			},
+		},
+	}
+
+	mgr := NewDeployManager(cfg, DeployOptions{TargetTags: []string{"backend"}})
+	allSuccess, err := mgr.RunWithContext(context.Background())
+	if err != nil {
+		t.Fatalf("manager Run failed: %v", err)
+	}
+	if !allSuccess {
+		t.Fatalf("expected all tagged services to deploy successfully")
+	}
+
+	for _, marker := range []string{preMarker, postMarker, dataPostMarker} {
+		if _, err := os.Stat(marker); err != nil {
+			t.Errorf("expected tag hook marker file %s to exist: %v", marker, err)
+		}
 	}
 }

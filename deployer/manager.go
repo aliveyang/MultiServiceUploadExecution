@@ -15,11 +15,11 @@ import (
 // DeployOptions 部署运行选项
 type DeployOptions struct {
 	Parallel       *bool
-	TargetServices []string
-	TargetGroups   []string // 过滤目标分组，如 "frontend", "backend"
+	TargetServices []string // 过滤目标服务名，如 "api-server-01"
+	TargetTags     []string // 过滤目标标签（并集语义：服务携带任一选中标签即命中），如 "backend", "data"
 	TargetTypes    []string // 过滤目标类型，如 "standard", "exec_only", "sync_only"
-	Scenario       string   // 指定场景预设名称，如 "prod", "test"
 	MaxWorkers     int      // 最大并发 Worker 数量（<=0 时默认 10）
+	ConfigPath     string   // 配置文件路径（注入批次钩子 $CONFIG 变量；可空）
 
 	// 批次事件注入点（仅 Web 层使用；OnEvent 为 nil 时零开销，CLI 行为不变）
 	Workspace string                          // 信息性字段：随批次事件透传，用于历史归属
@@ -46,7 +46,7 @@ func (m *DeployManager) emit(name string, payload any) {
 func (m *DeployManager) runOne(ctx context.Context, svc config.ServiceConfig, idx int) ServiceResult {
 	m.emit(EventServiceStarted, ServiceNodeInput{
 		Name:  svc.Name,
-		Group: svc.Group,
+		Tags:  svc.Tags,
 		Type:  svc.Type,
 		Stage: svc.Stage,
 		Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -64,9 +64,27 @@ func NewDeployManager(cfg *config.DeployConfig, opts DeployOptions) *DeployManag
 	}
 }
 
-// Run 启动多服务部署（向后兼容）
-func (m *DeployManager) Run() (bool, error) {
-	return m.RunWithContext(context.Background())
+// batchHookEnv 构造批次钩子的注入环境变量：SPACE/TAGS/BATCH_ID/CONFIG/NODE_TOTAL/
+// NODE_SUCCESS/NODE_FAILED/DURATION（POSIX shell 以 $SPACE 引用，Windows cmd 以 %SPACE% 引用）。
+// 变量恒全量定义：结果类变量批次开始前为 0；字符串变量不允许空值——Windows 环境变量为空等同未定义，
+// cmd 会将 %SPACE% 原样保留，故空 workspace 回退 "default"、空 tags 回退 "none"。
+func batchHookEnv(workspace, tags, batchID, configPath string, nodeTotal, nodeSuccess, nodeFailed, durationMs int64) []string {
+	if strings.TrimSpace(workspace) == "" {
+		workspace = config.DefaultWorkspaceID
+	}
+	if strings.TrimSpace(tags) == "" {
+		tags = "none"
+	}
+	return []string{
+		"SPACE=" + workspace,
+		"TAGS=" + tags,
+		"BATCH_ID=" + batchID,
+		"CONFIG=" + configPath,
+		fmt.Sprintf("NODE_TOTAL=%d", nodeTotal),
+		fmt.Sprintf("NODE_SUCCESS=%d", nodeSuccess),
+		fmt.Sprintf("NODE_FAILED=%d", nodeFailed),
+		fmt.Sprintf("DURATION=%d", durationMs),
+	}
 }
 
 // RunWithContext 启动多服务部署，支持多场景、多任务、多分组分阶段调度编排、Context 取消与 Worker Pool 限流
@@ -97,7 +115,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		stageSet[stage] = true
 		plan = append(plan, ServiceNodeInput{
 			Name:  svc.Name,
-			Group: svc.Group,
+			Tags:  svc.Tags,
 			Type:  svc.Type,
 			Stage: stage,
 			Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -111,7 +129,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	m.emit(EventBatchStarted, BatchStartedPayload{
 		ID:         m.batchID,
 		Workspace:  m.options.Workspace,
-		Scenario:   m.options.Scenario,
+		Tags:       normalizeTagList(m.options.TargetTags),
 		Parallel:   m.cfg.IsParallel(),
 		MaxWorkers: m.options.MaxWorkers,
 		Total:      len(services),
@@ -120,6 +138,17 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	})
 
 	var allResults []ServiceResult
+
+	// 目标标签描述（供钩子环境变量与部署计划日志使用；空筛选回退 "none"）
+	tagsDesc := strings.Join(normalizeTagList(m.options.TargetTags), ",")
+	if tagsDesc == "" {
+		tagsDesc = "none"
+	}
+	hookEnvBase := func(nodeSuccess, nodeFailed, durationMs int64) []string {
+		return batchHookEnv(m.options.Workspace, tagsDesc, m.batchID, m.options.ConfigPath,
+			int64(len(services)), nodeSuccess, nodeFailed, durationMs)
+	}
+	preEnv := hookEnvBase(0, 0, 0)
 
 	// 1. 执行全局批次前置钩子 (PreDeploy，仅本地执行一次)
 	if len(m.cfg.Hooks.PreDeploy) > 0 {
@@ -133,7 +162,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 				m.emitBatchFinished(allResults, false, ctx)
 				return false, fmt.Errorf("pre-deploy hook canceled: %w", err)
 			}
-			if err := ExecuteLocalCommandContext(ctx, cmd, batchLogger); err != nil {
+			if err := ExecuteLocalCommandEnvContext(ctx, cmd, batchLogger, preEnv); err != nil {
 				logger.Error("Global pre-deploy hook command #%d failed: %v", i+1, err)
 				m.emitBatchFinished(allResults, false, ctx)
 				return false, fmt.Errorf("global pre-deploy hook failed: %w", err)
@@ -142,24 +171,13 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		logger.Success("Global pre-deploy hooks completed successfully.")
 	}
 
-	// 确定场景与并发策略
-	var scenario *config.ScenarioConfig
-	if strings.TrimSpace(m.options.Scenario) != "" {
-		scenario = m.cfg.FindScenario(m.options.Scenario)
-	}
-
+	// 确定并发策略（调用方显式指定优先）
 	parallel := m.cfg.IsParallel()
-	if scenario != nil && scenario.Parallel != nil {
-		parallel = *scenario.Parallel
-	}
 	if m.options.Parallel != nil {
 		parallel = *m.options.Parallel
 	}
 
 	maxWorkers := m.options.MaxWorkers
-	if maxWorkers <= 0 && scenario != nil && scenario.MaxWorkers > 0 {
-		maxWorkers = scenario.MaxWorkers
-	}
 	if maxWorkers <= 0 {
 		maxWorkers = 10
 	}
@@ -179,25 +197,19 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	}
 	sort.Ints(stageNums)
 
-	scenarioDesc := "none"
-	if scenario != nil {
-		scenarioDesc = scenario.Name
-	}
-	logger.System("Deployment Plan: %d service(s) across %d stage(s) [Scenario: %s, Parallel: %t, Max Workers: %d]",
-		len(services), len(stageNums), scenarioDesc, parallel, maxWorkers)
+	logger.System("Deployment Plan: %d service(s) across %d stage(s) [Tags: %s, Parallel: %t, Max Workers: %d]",
+		len(services), len(stageNums), tagsDesc, parallel, maxWorkers)
 
-	// 分组生命周期状态跟踪
-	groupTotalServices := make(map[string]int)
+	// 标签生命周期状态跟踪（多标签服务计入其所含的每个标签）
+	tagTotalServices := make(map[string]int)
 	for _, svc := range services {
-		grp := strings.ToLower(svc.Group)
-		if grp == "" {
-			grp = config.DefaultGroup
+		for _, tag := range serviceTags(svc) {
+			tagTotalServices[tag]++
 		}
-		groupTotalServices[grp]++
 	}
-	groupCompletedSuccess := make(map[string]int)
-	groupPreDeployExecuted := make(map[string]bool)
-	groupPostDeployExecuted := make(map[string]bool)
+	tagCompletedSuccess := make(map[string]int)
+	tagPreDeployExecuted := make(map[string]bool)
+	tagPostDeployExecuted := make(map[string]bool)
 
 	globalServiceIdx := 0
 	abortedDueToFailure := false
@@ -211,7 +223,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 			for _, svc := range stageServices {
 				res := ServiceResult{
 					ServiceName: svc.Name,
-					Group:       svc.Group,
+					Tags:        svc.Tags,
 					Type:        svc.Type,
 					Stage:       stageNum,
 					Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -228,7 +240,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 			for _, svc := range stageServices {
 				res := ServiceResult{
 					ServiceName: svc.Name,
-					Group:       svc.Group,
+					Tags:        svc.Tags,
 					Type:        svc.Type,
 					Stage:       stageNum,
 					Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -241,33 +253,32 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 			continue
 		}
 
-		// 执行当前 Stage 中所涉分组的专属批次前置钩子 (Group PreDeploy)
+		// 执行当前 Stage 中所涉标签的专属批次前置钩子 (Tag PreDeploy)
 		for _, svc := range stageServices {
-			grp := strings.ToLower(svc.Group)
-			if grp == "" {
-				grp = config.DefaultGroup
-			}
-			if !groupPreDeployExecuted[grp] {
-				groupPreDeployExecuted[grp] = true
-				groupCfg := m.cfg.FindGroup(grp)
-				if groupCfg != nil && len(groupCfg.Hooks.PreDeploy) > 0 {
-					logger.System(">>> Running group %q pre-deploy hooks (%d command(s))...", grp, len(groupCfg.Hooks.PreDeploy))
-					grpLogger := logger.NewServiceLogger(grp+"-pre", -1)
-					for i, cmd := range groupCfg.Hooks.PreDeploy {
+			for _, tag := range serviceTags(svc) {
+				if tagPreDeployExecuted[tag] {
+					continue
+				}
+				tagPreDeployExecuted[tag] = true
+				tagCfg := m.cfg.FindTagHook(tag)
+				if tagCfg != nil && len(tagCfg.Hooks.PreDeploy) > 0 {
+					logger.System(">>> Running tag %q pre-deploy hooks (%d command(s))...", tag, len(tagCfg.Hooks.PreDeploy))
+					tagLogger := logger.NewServiceLogger(tag+"-pre", -1)
+					for i, cmd := range tagCfg.Hooks.PreDeploy {
 						if strings.TrimSpace(cmd) == "" {
 							continue
 						}
 						if err := ctx.Err(); err != nil {
 							m.emitBatchFinished(allResults, false, ctx)
-							return false, fmt.Errorf("group %q pre-deploy hook canceled: %w", grp, err)
+							return false, fmt.Errorf("tag %q pre-deploy hook canceled: %w", tag, err)
 						}
-						if err := ExecuteLocalCommandContext(ctx, cmd, grpLogger); err != nil {
-							logger.Error("Group %q pre-deploy hook command #%d failed: %v", grp, i+1, err)
+						if err := ExecuteLocalCommandEnvContext(ctx, cmd, tagLogger, preEnv); err != nil {
+							logger.Error("Tag %q pre-deploy hook command #%d failed: %v", tag, i+1, err)
 							m.emitBatchFinished(allResults, false, ctx)
-							return false, fmt.Errorf("group %q pre-deploy hook failed: %w", grp, err)
+							return false, fmt.Errorf("tag %q pre-deploy hook failed: %w", tag, err)
 						}
 					}
-					logger.Success("Group %q pre-deploy hooks completed successfully.", grp)
+					logger.Success("Tag %q pre-deploy hooks completed successfully.", tag)
 				}
 			}
 		}
@@ -288,7 +299,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 					case <-ctx.Done():
 						stageResults[idx] = ServiceResult{
 							ServiceName: s.Name,
-							Group:       s.Group,
+							Tags:        s.Tags,
 							Type:        s.Type,
 							Stage:       stageNum,
 							Host:        fmt.Sprintf("%s:%d", s.Server.Host, s.Server.Port),
@@ -311,7 +322,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 				if err := ctx.Err(); err != nil {
 					stageResults[i] = ServiceResult{
 						ServiceName: svc.Name,
-						Group:       svc.Group,
+						Tags:        svc.Tags,
 						Type:        svc.Type,
 						Stage:       stageNum,
 						Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
@@ -327,42 +338,42 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		globalServiceIdx += len(stageServices)
 		allResults = append(allResults, stageResults...)
 
-		// 检查当前 Stage 是否有任何服务失败，并累加分组成功计数
+		// 检查当前 Stage 是否有任何服务失败，并累加标签成功计数（多标签服务计入其所含每个标签）
 		for _, r := range stageResults {
-			grp := strings.ToLower(r.Group)
-			if grp == "" {
-				grp = config.DefaultGroup
-			}
 			if !r.Success {
 				abortedDueToFailure = true
 				logger.Error("Stage %d deployment failed on service %q. Aborting subsequent stages!", stageNum, r.ServiceName)
-			} else {
-				groupCompletedSuccess[grp]++
+				continue
+			}
+			for _, tag := range resultTags(r) {
+				tagCompletedSuccess[tag]++
 			}
 		}
 
-		// 检查当前 Stage 结束后是否有分组已全部成功完成，触发对应 Group PostDeploy
-		for grp, total := range groupTotalServices {
-			if !groupPostDeployExecuted[grp] && groupCompletedSuccess[grp] == total {
-				groupPostDeployExecuted[grp] = true
-				groupCfg := m.cfg.FindGroup(grp)
-				if groupCfg != nil && len(groupCfg.Hooks.PostDeploy) > 0 {
-					logger.System("\n>>> Running group %q post-deploy hooks (%d command(s))...", grp, len(groupCfg.Hooks.PostDeploy))
-					grpLogger := logger.NewServiceLogger(grp+"-post", -1)
-					for i, cmd := range groupCfg.Hooks.PostDeploy {
+		// 检查当前 Stage 结束后是否有标签已全部成功完成，触发对应 Tag PostDeploy
+		for tag, total := range tagTotalServices {
+			if !tagPostDeployExecuted[tag] && tagCompletedSuccess[tag] == total {
+				tagPostDeployExecuted[tag] = true
+				tagCfg := m.cfg.FindTagHook(tag)
+				if tagCfg != nil && len(tagCfg.Hooks.PostDeploy) > 0 {
+					logger.System("\n>>> Running tag %q post-deploy hooks (%d command(s))...", tag, len(tagCfg.Hooks.PostDeploy))
+					tagLogger := logger.NewServiceLogger(tag+"-post", -1)
+					successSoFar, failedSoFar := countOutcomes(allResults)
+					postEnv := hookEnvBase(successSoFar, failedSoFar, time.Since(totalStart).Milliseconds())
+					for i, cmd := range tagCfg.Hooks.PostDeploy {
 						if strings.TrimSpace(cmd) == "" {
 							continue
 						}
 						if err := ctx.Err(); err != nil {
-							logger.Error("Group %q post-deploy hook canceled: %v", grp, err)
+							logger.Error("Tag %q post-deploy hook canceled: %v", tag, err)
 							break
 						}
-						if err := ExecuteLocalCommandContext(ctx, cmd, grpLogger); err != nil {
-							logger.Error("Group %q post-deploy hook command #%d failed: %v", grp, i+1, err)
+						if err := ExecuteLocalCommandEnvContext(ctx, cmd, tagLogger, postEnv); err != nil {
+							logger.Error("Tag %q post-deploy hook command #%d failed: %v", tag, i+1, err)
 							break
 						}
 					}
-					logger.Success("Group %q post-deploy hooks completed successfully.", grp)
+					logger.Success("Tag %q post-deploy hooks completed successfully.", tag)
 				}
 			}
 		}
@@ -375,6 +386,8 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 	if allSuccess && len(m.cfg.Hooks.PostDeploy) > 0 {
 		logger.System("\n>>> Running batch post-deploy hooks (%d command(s))...", len(m.cfg.Hooks.PostDeploy))
 		batchLogger := logger.NewServiceLogger("batch-post", -1)
+		successCount, failedCount := countOutcomes(allResults)
+		postEnv := hookEnvBase(successCount, failedCount, time.Since(totalStart).Milliseconds())
 		for i, cmd := range m.cfg.Hooks.PostDeploy {
 			if strings.TrimSpace(cmd) == "" {
 				continue
@@ -384,7 +397,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 				allSuccess = false
 				break
 			}
-			if err := ExecuteLocalCommandContext(ctx, cmd, batchLogger); err != nil {
+			if err := ExecuteLocalCommandEnvContext(ctx, cmd, batchLogger, postEnv); err != nil {
 				logger.Error("Global post-deploy hook command #%d failed: %v", i+1, err)
 				allSuccess = false
 				break
@@ -418,17 +431,10 @@ func (m *DeployManager) emitBatchFinished(results []ServiceResult, allSuccess bo
 		outcomes = append(outcomes, o)
 	}
 
-	scenario := m.options.Scenario
-	if strings.TrimSpace(scenario) != "" {
-		if sc := m.cfg.FindScenario(scenario); sc != nil {
-			scenario = sc.Name
-		}
-	}
-
 	m.emit(EventBatchFinished, BatchRecord{
 		ID:         m.batchID,
 		Workspace:  m.options.Workspace,
-		Scenario:   scenario,
+		Tags:       normalizeTagList(m.options.TargetTags),
 		Start:      m.batchStart,
 		End:        time.Now(),
 		DurationMs: time.Since(m.batchStart).Milliseconds(),
@@ -440,28 +446,43 @@ func (m *DeployManager) emitBatchFinished(results []ServiceResult, allSuccess bo
 	})
 }
 
-// filterServices 筛选启用的与目标指定的服务（支持多场景、多分组、多类型与服务名多重过滤）
-func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
-	var scenario *config.ScenarioConfig
-	if strings.TrimSpace(m.options.Scenario) != "" {
-		scenario = m.cfg.FindScenario(m.options.Scenario)
-		if scenario == nil {
-			return nil, fmt.Errorf("scenario %q not found in configuration", m.options.Scenario)
-		}
+// serviceTags 返回服务的规范化标签列表（历史遗留：空标签兜底默认标签 "default"）
+func serviceTags(svc config.ServiceConfig) []string {
+	if len(svc.Tags) == 0 {
+		return []string{config.DefaultTag}
 	}
+	return svc.Tags
+}
 
+// resultTags 返回服务结果的标签列表（空值兜底默认标签 "default"）
+func resultTags(r ServiceResult) []string {
+	if len(r.Tags) == 0 {
+		return []string{config.DefaultTag}
+	}
+	return r.Tags
+}
+
+// normalizeTagList 规范化标签列表：trim、小写、去空、去重（保持首次出现顺序）
+func normalizeTagList(tags []string) []string {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
+}
+
+// filterServices 筛选启用的与目标指定的服务（支持标签、类型与服务名多重过滤；标签间为并集语义）
+func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 	// 命令行与调用方指定的过滤列表
 	targetServices := toLowerSet(m.options.TargetServices)
-	targetGroups := toLowerSet(m.options.TargetGroups)
+	targetTags := toLowerSet(m.options.TargetTags)
 	targetTypes := toLowerSet(m.options.TargetTypes)
-
-	// 场景定义的白名单限制
-	var scServices, scGroups, scTypes map[string]bool
-	if scenario != nil {
-		scServices = toLowerSet(scenario.Services)
-		scGroups = toLowerSet(scenario.Groups)
-		scTypes = toLowerSet(scenario.Types)
-	}
 
 	filtered := make([]config.ServiceConfig, 0)
 	for _, svc := range m.cfg.Services {
@@ -470,35 +491,20 @@ func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 		}
 
 		sName := strings.ToLower(strings.TrimSpace(svc.Name))
-		sGroup := strings.ToLower(strings.TrimSpace(svc.Group))
-		if sGroup == "" {
-			sGroup = config.DefaultGroup
-		}
 		sType := strings.ToLower(strings.TrimSpace(svc.Type))
 		if sType == "" {
 			sType = config.DeployTypeStandard
 		}
 
-		// 1. 场景约束过滤
-		if scenario != nil {
-			if len(scServices) > 0 && !scServices[sName] {
-				continue
-			}
-			if len(scGroups) > 0 && !scGroups[sGroup] {
-				continue
-			}
-			if len(scTypes) > 0 && !scTypes[sType] {
-				continue
-			}
-		}
-
-		// 2. 调用方参数过滤
+		// 1. 服务名过滤
 		if len(targetServices) > 0 && !targetServices[sName] {
 			continue
 		}
-		if len(targetGroups) > 0 && !targetGroups[sGroup] {
+		// 2. 标签过滤：并集语义——服务携带任一选中标签即命中
+		if len(targetTags) > 0 && !svcHasAnyTag(svc, targetTags) {
 			continue
 		}
+		// 3. 类型过滤
 		if len(targetTypes) > 0 && !targetTypes[sType] {
 			continue
 		}
@@ -507,6 +513,16 @@ func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 	}
 
 	return filtered, nil
+}
+
+// svcHasAnyTag 检查服务是否携带目标标签集合中的任一标签（并集匹配）
+func svcHasAnyTag(svc config.ServiceConfig, targetTags map[string]bool) bool {
+	for _, tag := range serviceTags(svc) {
+		if targetTags[tag] {
+			return true
+		}
+	}
+	return false
 }
 
 func toLowerSet(slice []string) map[string]bool {
@@ -522,12 +538,24 @@ func toLowerSet(slice []string) map[string]bool {
 	return m
 }
 
-// PrintSummary 格式化输出部署结果报告，呈现服务、分组、类型、阶段及执行耗时
+// countOutcomes 统计已完成结果中的成功与失败节点数（未成功一律计入失败，与 PrintSummary 口径一致）
+func countOutcomes(results []ServiceResult) (success, failed int64) {
+	for _, r := range results {
+		if r.Success {
+			success++
+		} else {
+			failed++
+		}
+	}
+	return
+}
+
+// PrintSummary 格式化输出部署结果报告，呈现服务、标签、类型、阶段及执行耗时
 func PrintSummary(results []ServiceResult, totalDuration time.Duration) bool {
 	logger.System("\n============================= DEPLOYMENT SUMMARY =============================")
-	fmt.Printf("%-3s %-16s %-10s %-10s %-6s %-20s %-10s %-10s %s\n",
-		"#", "SERVICE", "GROUP", "TYPE", "STAGE", "TARGET", "STATUS", "DURATION", "DETAILS")
-	fmt.Println(strings.Repeat("-", 98))
+	fmt.Printf("%-3s %-16s %-14s %-10s %-6s %-20s %-10s %-10s %s\n",
+		"#", "SERVICE", "TAGS", "TYPE", "STAGE", "TARGET", "STATUS", "DURATION", "DETAILS")
+	fmt.Println(strings.Repeat("-", 102))
 
 	successCount := 0
 	failedCount := 0
@@ -549,10 +577,7 @@ func PrintSummary(results []ServiceResult, totalDuration time.Duration) bool {
 			successCount++
 		}
 
-		grp := r.Group
-		if grp == "" {
-			grp = config.DefaultGroup
-		}
+		tags := strings.Join(resultTags(r), ",")
 		typ := r.Type
 		if typ == "" {
 			typ = config.DeployTypeStandard
@@ -562,10 +587,10 @@ func PrintSummary(results []ServiceResult, totalDuration time.Duration) bool {
 			stg = 1
 		}
 
-		fmt.Printf("%-3d %-16s %-10s %-10s %-6d %-20s %-10s %-10s %s\n",
+		fmt.Printf("%-3d %-16s %-14s %-10s %-6d %-20s %-10s %-10s %s\n",
 			i+1,
 			r.ServiceName,
-			grp,
+			tags,
 			typ,
 			stg,
 			r.Host,
@@ -575,7 +600,7 @@ func PrintSummary(results []ServiceResult, totalDuration time.Duration) bool {
 		)
 	}
 
-	fmt.Println(strings.Repeat("=", 98))
+	fmt.Println(strings.Repeat("=", 102))
 	summaryLine := fmt.Sprintf("Total: %d | Successful: %d | Failed: %d | Total Time: %v",
 		len(results), successCount, failedCount, totalDuration.Round(time.Millisecond))
 

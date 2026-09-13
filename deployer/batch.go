@@ -1,9 +1,6 @@
 package deployer
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -31,33 +28,20 @@ func NewBatchID() string {
 	return time.Now().Format(BatchIDLayout)
 }
 
-// EnsureUniqueBatchID 当目标历史目录已存在同 ID 批次文件时追加序号后缀，避免覆盖历史记录
-func EnsureUniqueBatchID(historyDir, batchID string) string {
-	if _, err := os.Stat(filepath.Join(historyDir, "batch-"+batchID+".json")); err != nil {
-		return batchID
-	}
-	for i := 1; ; i++ {
-		candidate := fmt.Sprintf("%s-%d", batchID, i)
-		if _, err := os.Stat(filepath.Join(historyDir, "batch-"+candidate+".json")); err != nil {
-			return candidate
-		}
-	}
-}
-
 // ServiceNodeInput 批次计划中的节点快照（batch_started 事件负载项）
 type ServiceNodeInput struct {
-	Name  string `json:"name"`
-	Group string `json:"group"`
-	Type  string `json:"type"`
-	Stage int    `json:"stage"`
-	Host  string `json:"host"`
+	Name  string   `json:"name"`
+	Tags  []string `json:"tags,omitempty"`
+	Type  string   `json:"type"`
+	Stage int      `json:"stage"`
+	Host  string   `json:"host"`
 }
 
 // BatchStartedPayload 批次开始事件负载：宣告批次 ID 与全部计划节点
 type BatchStartedPayload struct {
 	ID         string             `json:"id"`
 	Workspace  string             `json:"workspace,omitempty"`
-	Scenario   string             `json:"scenario,omitempty"`
+	Tags       []string           `json:"tags,omitempty"` // 本次批次的目标标签筛选（空表示全量）
 	Parallel   bool               `json:"parallel"`
 	MaxWorkers int                `json:"maxWorkers"`
 	Total      int                `json:"total"`
@@ -67,16 +51,16 @@ type BatchStartedPayload struct {
 
 // ServiceOutcome 单个服务节点的执行结果快照（JSON 序列化友好，供 SSE 与历史记录共用）
 type ServiceOutcome struct {
-	Name       string `json:"name"`
-	Group      string `json:"group"`
-	Type       string `json:"type"`
-	Stage      int    `json:"stage"`
-	Host       string `json:"host"`
-	Status     string `json:"status"` // ok | failed | skipped | canceled
-	Error      string `json:"error,omitempty"`
-	DurationMs int64  `json:"durationMs"`
-	Files      int    `json:"files,omitempty"`
-	Bytes      int64  `json:"bytes,omitempty"`
+	Name       string   `json:"name"`
+	Tags       []string `json:"tags,omitempty"`
+	Type       string   `json:"type"`
+	Stage      int      `json:"stage"`
+	Host       string   `json:"host"`
+	Status     string   `json:"status"` // ok | failed | skipped | canceled
+	Error      string   `json:"error,omitempty"`
+	DurationMs int64    `json:"durationMs"`
+	Files      int      `json:"files,omitempty"`
+	Bytes      int64    `json:"bytes,omitempty"`
 }
 
 // ServiceStatusOK / ServiceStatusFailed / ServiceStatusSkipped / ServiceStatusCanceled 节点状态常量
@@ -91,7 +75,7 @@ const (
 func outcomeOf(r ServiceResult) ServiceOutcome {
 	o := ServiceOutcome{
 		Name:       r.ServiceName,
-		Group:      r.Group,
+		Tags:       r.Tags,
 		Type:       r.Type,
 		Stage:      r.Stage,
 		Host:       r.Host,
@@ -121,7 +105,7 @@ func outcomeOf(r ServiceResult) ServiceOutcome {
 type BatchRecord struct {
 	ID         string           `json:"id"`
 	Workspace  string           `json:"workspace,omitempty"`
-	Scenario   string           `json:"scenario,omitempty"`
+	Tags       []string         `json:"tags,omitempty"` // 本次批次的目标标签筛选（空表示全量）
 	Start      time.Time        `json:"start"`
 	End        time.Time        `json:"end"`
 	DurationMs int64            `json:"durationMs"`

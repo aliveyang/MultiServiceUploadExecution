@@ -1,14 +1,12 @@
 package deployer
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"multi-service-deploy/config"
-	"multi-service-deploy/logger"
 )
 
 func TestFilterServices(t *testing.T) {
@@ -43,46 +41,52 @@ func TestFilterServices(t *testing.T) {
 	}
 }
 
-func TestFilterServicesWithGroupAndScenario(t *testing.T) {
+func TestFilterServicesWithTags(t *testing.T) {
 	cfg := &config.DeployConfig{
-		Scenarios: []config.ScenarioConfig{
-			{
-				Name:   "backend-only",
-				Groups: []string{"backend"},
-			},
-		},
 		Services: []config.ServiceConfig{
-			{Name: "web-1", Group: "frontend", Type: "standard"},
-			{Name: "api-1", Group: "backend", Type: "standard"},
-			{Name: "db-1", Group: "infra", Type: "exec_only"},
+			{Name: "web-1", Tags: []string{"frontend", "cdn"}, Type: "standard"},
+			{Name: "api-1", Tags: []string{"backend"}, Type: "standard"},
+			{Name: "db-1", Tags: []string{"infra", "data"}, Type: "exec_only"},
 		},
 	}
 
-	// 1. 按 Group 过滤
-	mgrGroup := NewDeployManager(cfg, DeployOptions{
-		TargetGroups: []string{"frontend"},
+	// 1. 单标签过滤
+	mgrTag := NewDeployManager(cfg, DeployOptions{
+		TargetTags: []string{"frontend"},
 	})
-	resGroup, err := mgrGroup.filterServices()
+	resTag, err := mgrTag.filterServices()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resGroup) != 1 || resGroup[0].Name != "web-1" {
-		t.Fatalf("expected only 'web-1', got %v", resGroup)
+	if len(resTag) != 1 || resTag[0].Name != "web-1" {
+		t.Fatalf("expected only 'web-1', got %v", resTag)
 	}
 
-	// 2. 按 Scenario 过滤
-	mgrScenario := NewDeployManager(cfg, DeployOptions{
-		Scenario: "backend-only",
+	// 2. 多标签并集语义：backend 或 data 任一命中
+	mgrUnion := NewDeployManager(cfg, DeployOptions{
+		TargetTags: []string{"backend", "data"},
 	})
-	resScenario, err := mgrScenario.filterServices()
+	resUnion, err := mgrUnion.filterServices()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resScenario) != 1 || resScenario[0].Name != "api-1" {
-		t.Fatalf("expected only 'api-1', got %v", resScenario)
+	if len(resUnion) != 2 || resUnion[0].Name != "api-1" || resUnion[1].Name != "db-1" {
+		t.Fatalf("expected union of 'api-1' and 'db-1', got %v", resUnion)
 	}
 
-	// 3. 按 Type 过滤
+	// 3. 大小写不敏感
+	mgrCase := NewDeployManager(cfg, DeployOptions{
+		TargetTags: []string{"BACKEND"},
+	})
+	resCase, err := mgrCase.filterServices()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resCase) != 1 || resCase[0].Name != "api-1" {
+		t.Fatalf("expected case-insensitive tag match on 'api-1', got %v", resCase)
+	}
+
+	// 4. 按 Type 过滤
 	mgrType := NewDeployManager(cfg, DeployOptions{
 		TargetTypes: []string{"exec_only"},
 	})
@@ -96,15 +100,14 @@ func TestFilterServicesWithGroupAndScenario(t *testing.T) {
 }
 
 func TestStageExecutionAndCircuitBreaker(t *testing.T) {
-	buf := &bytes.Buffer{}
-	logger.SetOutput(buf)
+	buf := captureDeployerLog(t)
 
 	// Stage 1 服务由于无效主机失败，Stage 2 服务应当被熔断跳过
 	cfg := &config.DeployConfig{
 		Services: []config.ServiceConfig{
 			{
 				Name:  "stage1-svc",
-				Group: "infra",
+				Tags:  []string{"infra"},
 				Stage: 1,
 				Server: config.ServerConfig{
 					Host:           "127.0.0.1",
@@ -116,7 +119,7 @@ func TestStageExecutionAndCircuitBreaker(t *testing.T) {
 			},
 			{
 				Name:  "stage2-svc",
-				Group: "backend",
+				Tags:  []string{"backend"},
 				Stage: 2,
 				Server: config.ServerConfig{
 					Host:           "127.0.0.1",
@@ -130,7 +133,7 @@ func TestStageExecutionAndCircuitBreaker(t *testing.T) {
 	}
 
 	mgr := NewDeployManager(cfg, DeployOptions{})
-	allSuccess, err := mgr.Run()
+	allSuccess, err := mgr.RunWithContext(context.Background())
 	if allSuccess {
 		t.Fatalf("expected allSuccess to be false due to stage 1 failure")
 	}
@@ -145,8 +148,7 @@ func TestStageExecutionAndCircuitBreaker(t *testing.T) {
 }
 
 func TestPrintSummary(t *testing.T) {
-	buf := &bytes.Buffer{}
-	logger.SetOutput(buf)
+	buf := captureDeployerLog(t)
 
 	results := []ServiceResult{
 		{
@@ -169,101 +171,92 @@ func TestPrintSummary(t *testing.T) {
 	}
 
 	out := buf.String()
-		if !strings.Contains(out, "DEPLOYMENT SUMMARY") {
-			t.Errorf("expected summary header, got %q", out)
-		}
+	if !strings.Contains(out, "DEPLOYMENT SUMMARY") {
+		t.Errorf("expected summary header, got %q", out)
+	}
+}
+
+func TestRunWithContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 立即取消
+
+	cfg := &config.DeployConfig{
+		Services: []config.ServiceConfig{
+			{Name: "svc-canceled", Server: config.ServerConfig{Host: "127.0.0.1", Username: "root", Password: "123"}},
+		},
 	}
 
-	func TestRunWithContextCancellation(t *testing.T) {
-		buf := &bytes.Buffer{}
-		logger.SetOutput(buf)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // 立即取消
-
-		cfg := &config.DeployConfig{
-			Services: []config.ServiceConfig{
-				{Name: "svc-canceled", Server: config.ServerConfig{Host: "127.0.0.1", Username: "root", Password: "123"}},
-			},
-		}
-
-		mgr := NewDeployManager(cfg, DeployOptions{})
-		allSuccess, err := mgr.RunWithContext(ctx)
-		if allSuccess {
-			t.Errorf("expected allSuccess to be false when context is canceled")
-		}
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
+	mgr := NewDeployManager(cfg, DeployOptions{})
+	allSuccess, err := mgr.RunWithContext(ctx)
+	if allSuccess {
+		t.Errorf("expected allSuccess to be false when context is canceled")
 	}
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
 
-	func TestGroupPreDeployHookExecutionAndAbort(t *testing.T) {
-		buf := &bytes.Buffer{}
-		logger.SetOutput(buf)
-
-		cfg := &config.DeployConfig{
-			Groups: []config.GroupConfig{
-				{
-					Name: "frontend",
-					Hooks: config.BatchHooks{
-						PreDeploy: []string{"exit 1"}, // 前端组构建命令失败
-					},
-				},
-				{
-					Name: "backend",
-					Hooks: config.BatchHooks{
-						PreDeploy: []string{"echo 'backend pre ok'"},
-					},
+func TestTagPreDeployHookExecutionAndAbort(t *testing.T) {
+	cfg := &config.DeployConfig{
+		TagHooks: []config.TagHookConfig{
+			{
+				Name: "frontend",
+				Hooks: config.BatchHooks{
+					PreDeploy: []string{"exit 1"}, // 前端标签构建命令失败
 				},
 			},
-			Services: []config.ServiceConfig{
-				{
-					Name:  "web-1",
-					Group: "frontend",
-					Server: config.ServerConfig{
-						Host:     "127.0.0.1",
-						Username: "root",
-						Password: "pwd",
-					},
+			{
+				Name: "backend",
+				Hooks: config.BatchHooks{
+					PreDeploy: []string{"echo 'backend pre ok'"},
 				},
 			},
-		}
-
-		mgr := NewDeployManager(cfg, DeployOptions{})
-		allSuccess, err := mgr.Run()
-		if allSuccess {
-			t.Fatalf("expected allSuccess to be false when group preDeploy fails")
-		}
-		if err == nil {
-			t.Fatalf("expected error from group preDeploy failure")
-		}
-		if !strings.Contains(err.Error(), "frontend") || !strings.Contains(err.Error(), "pre-deploy hook failed") {
-			t.Errorf("expected frontend pre-deploy hook failed error, got %v", err)
-		}
+		},
+		Services: []config.ServiceConfig{
+			{
+				Name: "web-1",
+				Tags: []string{"frontend"},
+				Server: config.ServerConfig{
+					Host:     "127.0.0.1",
+					Username: "root",
+					Password: "pwd",
+				},
+			},
+		},
 	}
 
-	func TestGlobalPreDeployHookAbort(t *testing.T) {
-		buf := &bytes.Buffer{}
-		logger.SetOutput(buf)
-
-		cfg := &config.DeployConfig{
-			Hooks: config.GlobalHooks{
-				PreDeploy: []string{"exit 1"}, // 模拟前置命令失败
-			},
-			Services: []config.ServiceConfig{
-				{Name: "svc-should-not-run", Server: config.ServerConfig{Host: "127.0.0.1", Username: "root", Password: "123"}},
-			},
-		}
-
-		mgr := NewDeployManager(cfg, DeployOptions{})
-		allSuccess, err := mgr.Run()
-		if allSuccess {
-			t.Fatalf("expected allSuccess to be false when preDeploy fails")
-		}
-		if err == nil {
-			t.Fatalf("expected error when preDeploy fails, got nil")
-		}
-		if !strings.Contains(err.Error(), "pre-deploy hook failed") {
-			t.Errorf("expected pre-deploy hook failed error, got %v", err)
-		}
+	mgr := NewDeployManager(cfg, DeployOptions{})
+	allSuccess, err := mgr.RunWithContext(context.Background())
+	if allSuccess {
+		t.Fatalf("expected allSuccess to be false when tag preDeploy fails")
 	}
+	if err == nil {
+		t.Fatalf("expected error from tag preDeploy failure")
+	}
+	if !strings.Contains(err.Error(), "frontend") || !strings.Contains(err.Error(), "pre-deploy hook failed") {
+		t.Errorf("expected frontend tag pre-deploy hook failed error, got %v", err)
+	}
+}
+
+func TestGlobalPreDeployHookAbort(t *testing.T) {
+	cfg := &config.DeployConfig{
+		Hooks: config.BatchHooks{
+			PreDeploy: []string{"exit 1"}, // 模拟前置命令失败
+		},
+		Services: []config.ServiceConfig{
+			{Name: "svc-should-not-run", Server: config.ServerConfig{Host: "127.0.0.1", Username: "root", Password: "123"}},
+		},
+	}
+
+	mgr := NewDeployManager(cfg, DeployOptions{})
+	allSuccess, err := mgr.RunWithContext(context.Background())
+	if allSuccess {
+		t.Fatalf("expected allSuccess to be false when preDeploy fails")
+	}
+	if err == nil {
+		t.Fatalf("expected error when preDeploy fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "pre-deploy hook failed") {
+		t.Errorf("expected pre-deploy hook failed error, got %v", err)
+	}
+}

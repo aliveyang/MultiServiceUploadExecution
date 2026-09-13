@@ -33,8 +33,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Workspace      string   `json:"workspace,omitempty"`
-		Scenario       string   `json:"scenario,omitempty"`
-		TargetGroups   []string `json:"targetGroups,omitempty"`
+		Tags           []string `json:"tags,omitempty"` // 目标标签筛选（并集语义：任一命中即部署）
 		TargetTypes    []string `json:"targetTypes,omitempty"`
 		TargetServices []string `json:"targetServices,omitempty"`
 		Parallel       *bool    `json:"parallel,omitempty"`
@@ -82,11 +81,11 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 
 	opts := deployer.DeployOptions{
 		Parallel:       req.Parallel,
-		Scenario:       req.Scenario,
-		TargetGroups:   req.TargetGroups,
+		TargetTags:     req.Tags,
 		TargetTypes:    req.TargetTypes,
 		TargetServices: req.TargetServices,
 		MaxWorkers:     maxWorkers,
+		ConfigPath:     cfgPath,
 		Workspace:      wsID,
 		BatchID:        deployer.NewBatchID(),
 	}
@@ -189,31 +188,7 @@ func (s *Server) handleTestConnect(w http.ResponseWriter, r *http.Request) {
 	// 如果密码或 passphrase 带有掩码，尝试从既有配置继承原真实密码
 	if targetServer.Password == config.MaskSecret || targetServer.Passphrase == config.MaskSecret || (targetServer.Password == "" && targetServer.PrivateKeyPath == "") {
 		cfgPath, _ := s.resolveWorkspacePath(r)
-		checkPaths := []string{cfgPath, s.configPath}
-		for _, p := range checkPaths {
-			if _, err := os.Stat(p); err == nil {
-				if origCfg, err := config.LoadConfig(p); err == nil {
-					for _, svc := range origCfg.Services {
-						if (req.ServiceName != "" && strings.EqualFold(svc.Name, req.ServiceName)) ||
-							(strings.EqualFold(svc.Server.Host, targetServer.Host) && svc.Server.Port == targetServer.Port && svc.Server.Username == targetServer.Username) {
-							if targetServer.Password == config.MaskSecret || targetServer.Password == "" {
-								targetServer.Password = svc.Server.Password
-							}
-							if targetServer.Passphrase == config.MaskSecret || targetServer.Passphrase == "" {
-								targetServer.Passphrase = svc.Server.Passphrase
-							}
-							if targetServer.PrivateKeyPath == "" && svc.Server.PrivateKeyPath != "" {
-								targetServer.PrivateKeyPath = svc.Server.PrivateKeyPath
-							}
-							break
-						}
-					}
-				}
-				if targetServer.Password != config.MaskSecret && targetServer.Password != "" {
-					break
-				}
-			}
-		}
+		s.inheritProbeCredentials(&targetServer, req.ServiceName, cfgPath)
 	}
 
 	// 环境变量展开
@@ -252,4 +227,39 @@ func (s *Server) handleTestConnect(w http.ResponseWriter, r *http.Request) {
 		"status":    "ok",
 		"latencyMs": latency,
 	})
+}
+
+// inheritProbeCredentials 为连通性探测补齐凭据：先按服务名精确匹配，再按 主机+端口+用户 复配匹配，
+// 从活动工作空间及根配置中继承掩码/空缺字段的真实值（含 ${ENV} 占位符，探测前统一展开）。
+func (s *Server) inheritProbeCredentials(target *config.ServerConfig, serviceName, cfgPath string) {
+	checkPaths := []string{cfgPath, s.configPath}
+	for _, p := range checkPaths {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		origCfg, err := config.LoadConfig(p)
+		if err != nil {
+			continue
+		}
+		for _, svc := range origCfg.Services {
+			matched := (serviceName != "" && strings.EqualFold(svc.Name, serviceName)) ||
+				(strings.EqualFold(svc.Server.Host, target.Host) && svc.Server.Port == target.Port && strings.EqualFold(svc.Server.Username, target.Username))
+			if !matched {
+				continue
+			}
+			if target.Password == config.MaskSecret || target.Password == "" {
+				target.Password = svc.Server.Password
+			}
+			if target.Passphrase == config.MaskSecret || target.Passphrase == "" {
+				target.Passphrase = svc.Server.Passphrase
+			}
+			if target.PrivateKeyPath == "" && svc.Server.PrivateKeyPath != "" {
+				target.PrivateKeyPath = svc.Server.PrivateKeyPath
+			}
+			break
+		}
+		if target.Password != config.MaskSecret && target.Password != "" {
+			break
+		}
+	}
 }

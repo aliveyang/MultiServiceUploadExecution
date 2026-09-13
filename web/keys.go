@@ -39,8 +39,11 @@ type keyInfo struct {
 }
 
 // handleKeys 工作空间私钥库管理：
-// GET    /api/keys?workspace=           列出密钥元数据
-// POST   /api/keys?workspace=           导入私钥 {"name","content","passphrase"?}
+// GET    /api/keys?workspace=           列出密钥元数据（响应含存储目录 dir，供前端拼装引用路径）
+// POST   /api/keys?workspace=           导入私钥 {"name"?, "content"?, "path"?, "passphrase"?}
+//
+//	content 与 path 二选一：path 为控制机本地文件，服务端代读入库
+//
 // DELETE /api/keys?workspace=&id=<name> 删除私钥
 func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 	_, wsID := s.resolveWorkspacePath(r)
@@ -90,7 +93,7 @@ func (s *Server) listKeys(w http.ResponseWriter, r *http.Request, wsID string) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Workspace-ID", wsID)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": list})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": list, "dir": dir})
 }
 
 // buildKeyInfo 读取私钥文件并解析元数据（内容仅用于本地解析，绝不进入响应）
@@ -145,11 +148,14 @@ func (s *Server) keyReferences(wsID string) map[string][]string {
 	return refs
 }
 
-// importKey 导入私钥：校验名称与内容，解析元数据后以 0600 权限落盘
+// importKey 导入私钥：校验名称与内容，解析元数据后以 0600 权限落盘。
+// 来源二选一：请求体 content（前端读取的文件内容）或 path（控制机本地文件，服务端代读，
+// 用于"填写路径后自动入库"）；未显式提供 name 时默认取 path 的文件名。
 func (s *Server) importKey(w http.ResponseWriter, r *http.Request, wsID string) {
 	var req struct {
 		Name       string `json:"name"`
 		Content    string `json:"content"`
+		Path       string `json:"path,omitempty"`
 		Passphrase string `json:"passphrase,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -157,12 +163,32 @@ func (s *Server) importKey(w http.ResponseWriter, r *http.Request, wsID string) 
 		return
 	}
 
+	var content []byte
+	var sourceName string
+	if trimmedPath := strings.TrimSpace(req.Path); trimmedPath != "" {
+		if req.Content != "" {
+			http.Error(w, "provide either 'content' or 'path', not both", http.StatusBadRequest)
+			return
+		}
+		data, err := os.ReadFile(trimmedPath)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to read private key from path: %v", err), http.StatusBadRequest)
+			return
+		}
+		content = data
+		sourceName = filepath.Base(trimmedPath)
+	} else {
+		content = []byte(req.Content)
+	}
+
 	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = sourceName
+	}
 	if !keyNamePattern.MatchString(name) {
 		http.Error(w, "invalid key name (letters, digits, dot, underscore, hyphen only)", http.StatusBadRequest)
 		return
 	}
-	content := []byte(req.Content)
 	if len(content) == 0 || len(content) > maxKeyBytes {
 		http.Error(w, fmt.Sprintf("key content must be between 1 and %d bytes", maxKeyBytes), http.StatusBadRequest)
 		return

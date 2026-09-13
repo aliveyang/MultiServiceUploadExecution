@@ -344,3 +344,23 @@ Web 控制台完成全新 UI 前后端对齐改造（单文件 SPA 全面接通�
 | **ARCH-16** | 前端后台标签页更新停滞：`softRender` 仅依赖 rAF，后台节流下 SSE 驱动的界面冻结 | rAF 之外增加 setTimeout 兜底（渲染幂等守卫） | ✅ 已闭环 |
 | **SEC-10** | `settings.json` 被误识别为工作空间 "settings"；同名工作空间可创建并与运行时文件冲突 | `ListWorkspaces` 排除运行时设置文件；`IsValidWorkspaceID` 增加 `settings` 保留名拒绝 | ✅ 已闭环 |
 | **ARCH-17** | 抽屉为动态注入 DOM，`bind()` 渲染期绑定使其内部按钮无事件 | 抽屉打开后调用 `bindDrawerActions()` 单独绑定 | ✅ 已闭环（主机库抽屉编辑→保存→落盘实测） |
+
+## 🔄 全面审计整改闭环 (2026-09-12 第四批)
+
+对项目代码与 Web 控制台 UI 完成第二轮全面审计（静态走读 + 真实浏览器实测 + 过度工程扫描），发现并修复以下问题：
+
+| 编号 | 类别 | 缺陷与整改 | 验证 |
+|---|---|---|---|
+| **SEC-11** | Windows 钩子命令重定向逃逸（实际发生） | 用户配置 `echo '==> [X] ...'` 经 `cmd.exe` 执行时 `>` 被解析为重定向，在控制机目录产生 `[Backend` 等游离文件（根目录已发现实物）。整改：`config.LoadConfig` 新增 `warnUnsafeHookQuoting` 加载期告警（单引号内含 `>` 仅告警不阻断，兼容 POSIX）；同步修复 `deploy.json` 与 `workspaces/default.json` 既有钩子为双引号写法；删除两处游离文件 | ✅ 配置解析回归通过 |
+| **SEC-12** | SSE 端点 CORS 全开放 | `handleSSE` 移除 `Access-Control-Allow-Origin: *`，禁止任意网页跨域读取部署日志流 | ✅ 冒烟核对响应头 |
+| **SEC-13** | 高危路径黑名单缺口 | `IsDangerousRemotePath` 此前不拦截 `..`、`../x`、`a/../..` 等向上逃逸的相对路径，配合 `cleanRemote` 可递归删除 SFTP 家目录祖先。整改：`path.Clean` 后追加 `..` 前缀判定 | ✅ 新增 4 个逃逸用例通过 |
+| **UI-01** | 界面宣传不存在的能力 | 批次钩子页"可用变量"面板宣称 `$SPACE/$BATCH_ID/$NODE_*` 等由控制机注入，但后端从未实现。整改：真实实现注入——`deployer.batchHookEnv` 构造 8 个环境变量（SPACE/SCENARIO/BATCH_ID/CONFIG/NODE_TOTAL/NODE_SUCCESS/NODE_FAILED/DURATION），全局与分组批次钩子经 `ExecuteLocalCommandEnvContext` 注入执行；UI 补充 POSIX `$SPACE` 与 Windows `%SPACE%` 语法说明；`DeployOptions` 新增 `ConfigPath` 透传（CLI 与 Web 双路） | ✅ `TestBatchHookEnv` + `TestExecuteLocalCommandEnvContext` |
+| **UI-02** | 设置页假开关与死设置 | "强制校验主机指纹/高危远端路径拦截"为硬编码开关（架构红线不可关闭），误导可操作。整改：改为"恒定生效"只读徽标；删除全链路无消费方的死设置 `settings.connectTimeout`（视图/校验/存储全清）；`settings.autoOpen` 此前同样无消费方，整改为真实接线：`main.go` 遵循 `autoOpen`（`DEPLOY_NO_OPEN=1` 仍最高优先），设置页新增真实开关 | ✅ 设置读写/重启提示用例回归 |
+| **UI-03** | 交互不一致 | 编排台"类型筛选"由四态循环按钮改为下拉框（窄屏不再隐藏）；编排台搜索由"每键全量重渲染+焦点补偿"改为与主机/密钥/历史页一致的行级过滤；执行页状态栏"缓冲 1024"修正为实际前端缓冲 2000 | ✅ 浏览器实测 |
+| **UI-04** | 服务级钩子不可编辑 | 服务配置页四阶段钩子（preUploadLocal 等）此前仅只读展示。整改：支持面板内增删命令（内存态 + 脏标记，保存随整表落盘） | ✅ 浏览器实测 |
+| **ACC-01** | 无障碍 | 新增 `:focus-visible` 键盘焦点环；toast 增加 `role="status" aria-live="polite"`；抽屉关闭、删除图标按钮、`cleanRemote`/`autoOpen` 开关补充 `aria-label` 与 `role="switch"` + `aria-checked` | ✅ 静态核查 |
+| **ERR-01** | 错误盲吞 | `sftp_uploader` 的 `cleanRemote` 清理以 `_ =` 吞掉 `RemoveAll` 错误，清理失败会静默续传造成新旧文件混杂。整改：清理失败立即中止并包装错误 | ✅ 编译回归 |
+| **CLN-01** | 死代码清理 | 删除零生产调用方的兼容包装：`RunServicePipeline`、`ExecuteLocalCommand`、`NewSSHClient`、`ExecuteRemoteCommand`、`DeployManager.Run`、`Server.Start`、`EnsureUniqueBatchID`、`logger.SetOutput`、`GlobalHooks` 别名；`IsValidWorkspaceID` 移除被正则覆盖的冗余黑名单检查；`handleTestConnect` 凭据继承逻辑收缩为 `inheritProbeCredentials`；相关测试全部迁移至 `*Context` 变体与 `OnLog` 回调捕获（约 -100 行） | ✅ go vet 0 警告，全量测试 PASS |
+| **CLN-02** | 代码格式 | 11 个文件存在缩进错乱（gofmt 未通过）。整改：`gofmt -w .` 全量格式化，`gofmt -l` 已清零 | ✅ gofmt -l 为空 |
+
+**回归验证结论**：`go vet ./...` 0 警告；`gofmt -l` 为空；`go test ./...` 全部 PASS（含新增 `TestBatchHookEnv`、`TestExecuteLocalCommandEnvContext`、相对路径逃逸用例与设置 autoOpen 回读断言）；`CGO_ENABLED=0` 构建自检通过；Web 控制台实测（设置页徽标/开关、编排台筛选、SSE 响应头、钩子变量注入）通过。

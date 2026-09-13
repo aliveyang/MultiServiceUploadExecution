@@ -2,9 +2,8 @@ package deployer
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,21 +17,37 @@ func TestNewBatchIDFormat(t *testing.T) {
 	}
 }
 
-func TestEnsureUniqueBatchID(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+// TestBatchHookEnv 验证批次钩子注入环境变量的构造：变量恒全量定义且整数值无填充
+func TestBatchHookEnv(t *testing.T) {
+	env := batchHookEnv("prod", "backend,data", "20260912-150405", "deploy.json", 4, 3, 1, 12345)
+	want := map[string]string{
+		"SPACE":        "prod",
+		"TAGS":         "backend,data",
+		"BATCH_ID":     "20260912-150405",
+		"CONFIG":       "deploy.json",
+		"NODE_TOTAL":   "4",
+		"NODE_SUCCESS": "3",
+		"NODE_FAILED":  "1",
+		"DURATION":     "12345",
+	}
+	got := map[string]string{}
+	for _, kv := range env {
+		parts := strings.SplitN(kv, "=", 2)
+		got[parts[0]] = parts[1]
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("env %s: expected %q, got %q", k, v, got[k])
+		}
+	}
+	if len(env) != len(want) {
+		t.Errorf("expected %d env vars, got %d", len(want), len(env))
 	}
 
-	if got := EnsureUniqueBatchID(dir, "20260912-080000"); got != "20260912-080000" {
-		t.Errorf("expected original id when dir empty, got %q", got)
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, "batch-20260912-080000.json"), []byte("{}"), 0644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if got := EnsureUniqueBatchID(dir, "20260912-080000"); got != "20260912-080000-1" {
-		t.Errorf("expected suffixed id, got %q", got)
+	// 空字符串在 Windows 环境块中等同未定义，必须回退为非空默认值
+	fallback := strings.Join(batchHookEnv("", "", "b", "c", 0, 0, 0, 0), "\n")
+	if !strings.Contains(fallback, "SPACE=default") || !strings.Contains(fallback, "TAGS=none") {
+		t.Errorf("expected empty workspace/tags to fall back, got %s", fallback)
 	}
 }
 
@@ -43,7 +58,7 @@ func TestManagerEmitsBatchEvents(t *testing.T) {
 		Services: []config.ServiceConfig{
 			{
 				Name:  "mock-unreachable",
-				Group: "backend",
+				Tags:  []string{"backend"},
 				Type:  config.DeployTypeExecOnly,
 				Stage: 1,
 				Server: config.ServerConfig{
@@ -60,15 +75,23 @@ func TestManagerEmitsBatchEvents(t *testing.T) {
 	var events []string
 	var finishedStatus string
 	var outcomeCount int
+	var startedTags []string
+	var outcomeTags []string
 	opts := DeployOptions{
-		BatchID:   "20260912-100000",
-		Workspace: "default",
+		BatchID:    "20260912-100000",
+		Workspace:  "default",
+		TargetTags: []string{"Backend", "data", "Backend"}, // 验证批次记录中的标签规范化（小写去重）
 		OnEvent: func(event string, payload any) {
 			events = append(events, event)
 			switch event {
+			case EventBatchStarted:
+				if p, ok := payload.(BatchStartedPayload); ok {
+					startedTags = p.Tags
+				}
 			case EventServiceFinished:
 				if o, ok := payload.(ServiceOutcome); ok && o.Name == "mock-unreachable" && o.Status == ServiceStatusFailed {
 					outcomeCount++
+					outcomeTags = o.Tags
 				}
 			case EventBatchFinished:
 				if rec, ok := payload.(BatchRecord); ok {
@@ -78,6 +101,9 @@ func TestManagerEmitsBatchEvents(t *testing.T) {
 					}
 					if rec.Workspace != "default" {
 						t.Errorf("expected workspace to propagate, got %q", rec.Workspace)
+					}
+					if len(rec.Tags) != 2 || rec.Tags[0] != "backend" || rec.Tags[1] != "data" {
+						t.Errorf("expected normalized tags [backend data], got %v", rec.Tags)
 					}
 				}
 			}
@@ -104,6 +130,12 @@ func TestManagerEmitsBatchEvents(t *testing.T) {
 	}
 	if outcomeCount != 1 {
 		t.Errorf("expected one failed service outcome, got %d", outcomeCount)
+	}
+	if len(startedTags) != 2 || startedTags[0] != "backend" {
+		t.Errorf("expected batch_started tags [backend data], got %v", startedTags)
+	}
+	if len(outcomeTags) != 1 || outcomeTags[0] != "backend" {
+		t.Errorf("expected outcome tags [backend], got %v", outcomeTags)
 	}
 	if finishedStatus != BatchStatusFailed {
 		t.Errorf("expected batch status failed, got %q", finishedStatus)
