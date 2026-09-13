@@ -159,6 +159,27 @@ function findTagHookEntry(name) {
 function svcStage(svc) { return 'S' + String(svc.stage || 1).padStart(2, '0'); }
 function svcSt(svc) { return svc.enabled === false ? 'off' : 'ok'; }
 
+/* ============================================================
+   流水线步骤模型 —— 服务 steps 字段（缺省=执行，显式 false=跳过）；
+   旧版 type 字段已由后端迁移为步骤开关，此处仅做展示口径推导
+   ============================================================ */
+const PIPELINE_STEPS = [
+  { key: 'preUploadLocal',   where: '本地 · 上传前' },
+  { key: 'preUploadRemote',  where: '远端 · 上传前' },
+  { key: 'upload',           where: '本地 → 远端 · SFTP' },
+  { key: 'postUploadRemote', where: '远端 · 上传后' },
+  { key: 'postUploadLocal',  where: '本地 · 上传后' }
+];
+
+function stepEnabled(svc, key) {
+  const st = svc && svc.steps;
+  return !(st && st[key] === false);
+}
+
+function disabledStepsCount(svc) {
+  return PIPELINE_STEPS.filter(st => !stepEnabled(svc, st.key)).length;
+}
+
 function deriveHosts() {
   const map = new Map();
   for (const s of cfgServices()) {
@@ -210,7 +231,9 @@ function fmtDateTime(ts) {
 const app = {
   view:'orchestration', arg:null,
   tagFilter:[],   // 选中标签集合（多选，并集语义；空数组=全部服务）
-  typeFilter:'', search:''
+  search:'',
+  hookUnlockGlobal:false,  // 服务配置页内全局批次钩子的编辑解锁标记（会话级）
+  hookUnlockTags:[]        // 已解锁编辑的标签批次钩子名列表（会话级）
 };
 
 function parseHash(){

@@ -13,7 +13,6 @@ function viewOrchestration(){
     // 标签并集语义：服务携带任一选中标签即命中
     list = list.filter(s => svcTags(s).some(t => app.tagFilter.indexOf(t) >= 0));
   }
-  if (app.typeFilter) list = list.filter(s => (s.type || 'standard') === app.typeFilter);
   if (app.search) {
     const q = app.search.toLowerCase();
     list = list.filter(s => (s.name + svcTags(s).join(' ') + (s.server && s.server.host || '') + (s.upload && s.upload.remotePath || '')).toLowerCase().includes(q));
@@ -26,12 +25,14 @@ function viewOrchestration(){
   const hooks = (state.config && state.config.hooks) || {};
   const preCmds = hooks.preDeploy || [];
 
-  const rows = list.map(s => `
+  const rows = list.map(s => {
+    const skip = disabledStepsCount(s);
+    return `
     <div class="tbl-row">
       <div class="cell"><span class="nm link" data-svc="${esc(s.name)}">${esc(s.name)}</span></div>
       <div class="cell">
         ${svcTags(s).map(t => `<span class="tag type" style="color:var(--${tagColor(t)})">${esc(t)}</span>`).join(' ')}
-        <span class="tag none">·</span><span class="tag">${esc(s.type || 'standard')}</span>
+        ${skip ? `<span class="tag none">·</span><span class="tag" title="已禁用部分流水线步骤">跳过${skip}步</span>` : ''}
         <span class="tag none">·</span><span class="tag">${esc(svcStage(s))}</span>
       </div>
       <div class="cell"><span class="ref-link">${esc((s.server && s.server.host) || s.hostRef || '—')}${ICON.link}</span></div>
@@ -40,7 +41,8 @@ function viewOrchestration(){
         <span class="st ${stClass(svcSt(s))}"><span class="dot dot--${dotOf(svcSt(s))}"></span>${stLabel(svcSt(s))}</span>
       </div>
       <div class="cell right"><button class="btn btn--sm" data-deploy-svc="${esc(s.name)}">部署</button></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return `
   <div class="page">
@@ -56,10 +58,6 @@ function viewOrchestration(){
             `<option value="${esc(k)}"${app.tagFilter.length === 1 && app.tagFilter[0] === k ? ' selected' : ''}>${esc(k)}（${tags[k]}）</option>`).join('')}
         </select></div>
         <div class="search">${ICON.search}<input id="svcSearch" placeholder="搜索服务 / 标签 / 主机" value="${esc(app.search)}"></div>
-        <div class="grp-sel grp-sel--type"><select id="typeSel" title="类型筛选" aria-label="类型筛选">
-          <option value=""${app.typeFilter === '' ? ' selected' : ''}>全部类型</option>
-          ${['standard','exec_only','sync_only'].map(t => `<option value="${t}"${app.typeFilter === t ? ' selected' : ''}>${t}</option>`).join('')}
-        </select></div>
         <button class="btn" data-act="new-service">${ICON.plus}新增服务</button>
       </div>
     </div>
@@ -74,7 +72,7 @@ function viewOrchestration(){
     <div class="panel">
       <div class="tbl" style="--minw:760px;--cols:minmax(0,1fr) 260px 196px 176px 110px 62px;--cols-l:minmax(0,1fr) 260px 196px 110px 62px">
         <div class="tbl-head">
-          <span>服务名称</span><span>标签 / 类型 / 阶段</span><span>主机引用</span><span class="c-opt">远端路径</span><span>状态</span><span style="text-align:right">操作</span>
+          <span>服务名称</span><span>标签 / 阶段</span><span>主机引用</span><span class="c-opt">远端路径</span><span>状态</span><span style="text-align:right">操作</span>
         </div>
         ${rows || `<div class="tbl-row"><div class="cell"><span class="dim">当前空间暂无服务，请保存配置或切换空间</span></div></div>`}
       </div>
@@ -517,28 +515,103 @@ function viewService(){
   const sv = d.server || {};
   const up = d.upload || {};
   const hk = d.hooks || {};
-  const hookDefs = [
-    { key:'preUploadLocal',   where:'本地 · 上传前' },
-    { key:'preUploadRemote',  where:'远端 · 上传前' },
-    { key:'postUploadRemote', where:'远端 · 上传后' },
-    { key:'postUploadLocal',  where:'本地 · 上传后' }
-  ];
-  const hookCards = hookDefs.map((h, i) => {
-    const cmds = hk[h.key] || [];
+
+  /* 生命周期时间线：卡片顺序即一次真实部署的执行顺序
+     （全局前置 → 各标签前置 → 服务五步 → 各标签后置 → 全局后置，
+     与 deployer 批次调度 manager.go + 服务流水线 pipeline.go 一致） */
+  const globalHooks = (state.config && state.config.hooks) || {};
+  const tagHooked = svcTags(d).filter(tag => findTagHookEntry(tag));
+  const timeline = [{ kind: 'global', key: 'preDeploy', cmds: globalHooks.preDeploy || [], when: '本地 · 所有节点启动前（一次）' }];
+  tagHooked.forEach(tag => {
+    const th = findTagHookEntry(tag);
+    timeline.push({ kind: 'tag', tag, key: 'preDeploy', cmds: (th.hooks && th.hooks.preDeploy) || [], when: '本地 · 含该标签的首个波次前（一次）' });
+  });
+  PIPELINE_STEPS.forEach(st => timeline.push({ kind: 'svc', step: st }));
+  tagHooked.forEach(tag => {
+    const th = findTagHookEntry(tag);
+    timeline.push({ kind: 'tag', tag, key: 'postDeploy', cmds: (th.hooks && th.hooks.postDeploy) || [], when: '本地 · 该标签全部节点成功后（一次）' });
+  });
+  timeline.push({ kind: 'global', key: 'postDeploy', cmds: globalHooks.postDeploy || [], when: '本地 · 全部节点成功后（一次）' });
+
+  /* 批次级卡（全局/标签）：默认只读，卡上「解锁编辑」确认后放开本作用域的前后两张卡；
+     标题行放作用域与解锁入口，元信息行放执行时机与失败语义，避免单行挤压换行 */
+  const batchCard = (item, no) => {
+    const isGlobal = item.kind === 'global';
+    const unlocked = isGlobal ? !!app.hookUnlockGlobal : (app.hookUnlockTags || []).indexOf(item.tag) >= 0;
+    const scopeChip = isGlobal
+      ? `<span class="pill ${unlocked ? 'pill--warn' : 'pill--dim'}">全局批次</span>`
+      : `<span class="tag type" style="color:var(--${tagColor(item.tag)})">${esc(item.tag)}</span>`;
+    const unlockCtl = unlocked
+      ? `<span class="pill pill--warn">已解锁</span>`
+      : `<button class="btn btn--sm btn--quiet" data-unlock-hooks="${isGlobal ? 'global' : 'tag:' + esc(item.tag)}">解锁编辑</button>`;
+    const delAttr = i => isGlobal
+      ? `data-del-hook="${esc(item.key)}:${i}"`
+      : `data-tag-cmd-del="${esc(item.tag)}" data-cmd-key="${esc(item.key)}" data-cmd-idx="${i}"`;
+    const scopeAttrs = isGlobal
+      ? `data-cmd-scope="hooks"`
+      : `data-cmd-scope="tagHooks" data-cmd-tag="${esc(item.tag)}"`;
+    const inputId = 'cmdIn-tl-' + (isGlobal ? 'g' : 't-' + String(item.tag).replace(/[^a-zA-Z0-9_-]/g, '_')) + '-' + item.key;
     return `
-    <div class="hook">
+    <div class="hook${unlocked ? '' : ' is-locked'}">
       <div class="hook-hd">
-        <span class="id">${String(i+1).padStart(2,'0')}</span>
-        <span class="ttl">${esc(h.key)}</span>
-        <span class="right"><span class="mono" style="font-size:10.5px;color:var(--t3)">${esc(h.where)}</span></span>
+        <span class="id">${no}</span>
+        <span class="ttl">${esc(item.key)}</span>
+        ${scopeChip}
+        <span class="right">${unlockCtl}</span>
       </div>
-      ${cmds.map((c, ci) => `<div class="cmd"><span class="no mono">${ci+1}</span><span class="pr">$</span><span class="tx">${esc(c)}</span><span class="ic" data-del-svc-hook="${h.key}:${ci}" title="删除命令" aria-label="删除命令" style="cursor:pointer">${ICON.trash}</span></div>`).join('') ||
-        `<span class="dim" style="font-size:11px">未配置</span>`}
-      <div class="cmd-add"><input class="input" id="cmdIn-svc-${h.key}" placeholder="输入命令后回车添加（可连续添加多条）" data-cmd-scope="svc" data-cmd-key="${h.key}" autocomplete="off"></div>
+      <div class="hook-meta">
+        <span class="mono" style="font-size:10.5px;color:var(--t3)">${esc(item.when)}</span>
+        <span class="pill ${item.key === 'preDeploy' ? 'pill--warn' : 'pill--ok'}">${item.key === 'preDeploy' ? '失败即阻断批次' : '有节点失败则不执行'}</span>
+      </div>
+      ${(item.cmds || []).map((c, i) => `<div class="cmd"><span class="no mono">${i+1}</span><span class="pr">$</span><span class="tx">${esc(c)}</span>${unlocked ? `<span class="ic" ${delAttr(i)} title="删除命令" aria-label="删除命令" style="cursor:pointer">${ICON.trash}</span>` : ''}</div>`).join('') ||
+        `<span class="dim" style="font-size:11px">未配置命令</span>`}
+      ${unlocked ? `<div class="cmd-add"><input class="input" id="${inputId}" placeholder="输入命令后回车添加（可连续添加多条）" ${scopeAttrs} data-cmd-key="${esc(item.key)}" autocomplete="off"></div>` : ''}
     </div>`;
+  };
+
+  /* 服务步骤卡：开关控制部署时是否执行该阶段；禁用后已配置的命令/路径保留不删除 */
+  const svcCard = (st, no) => {
+    const on = stepEnabled(d, st.key);
+    let body;
+    if (!on) {
+      body = `<span class="dim" style="font-size:11px">已禁用 · 部署时跳过此步骤（已配置的${st.key === 'upload' ? '路径' : '命令'}保留不删除）</span>`;
+    } else if (st.key === 'upload') {
+      const hasPath = (up.localPath && up.localPath.trim()) || (up.remotePath && up.remotePath.trim());
+      body = hasPath
+        ? `<div class="cmd"><span class="no mono">→</span><span class="tx mono">${esc(up.localPath || '（未配置）')} → ${esc(up.remotePath || '（未配置）')}</span></div>
+           <div class="field-note" style="margin-top:4px">路径与排除规则在左侧「03 上传与排除」中配置</div>`
+        : `<div class="field-note">路径在左侧「03 上传与排除」中配置；未配置路径时部署自动跳过传输</div>`;
+    } else {
+      const cmds = hk[st.key] || [];
+      body = (cmds.map((c, ci) => `<div class="cmd"><span class="no mono">${ci+1}</span><span class="pr">$</span><span class="tx">${esc(c)}</span><span class="ic" data-del-svc-hook="${st.key}:${ci}" title="删除命令" aria-label="删除命令" style="cursor:pointer">${ICON.trash}</span></div>`).join('') ||
+        `<span class="dim" style="font-size:11px">未配置命令</span>`) +
+        `<div class="cmd-add"><input class="input" id="cmdIn-svc-${st.key}" placeholder="输入命令后回车添加（可连续添加多条）" data-cmd-scope="svc" data-cmd-key="${st.key}" autocomplete="off"></div>`;
+    }
+    return `
+    <div class="hook${on ? '' : ' is-off'}">
+      <div class="hook-hd">
+        <span class="id">${no}</span>
+        <span class="ttl">${esc(st.key)}</span>
+        <span class="pill pill--dim">本服务</span>
+        <span class="right">
+          <span class="pill ${on ? 'pill--ok' : 'pill--dim'}">${on ? '执行' : '已禁用'}</span>
+          <button type="button" class="sw${on ? ' on' : ''}" data-step-toggle="${st.key}" role="switch" aria-checked="${on}" aria-label="启用或禁用步骤 ${esc(st.key)}"></button>
+        </span>
+      </div>
+      <div class="hook-meta">
+        <span class="mono" style="font-size:10.5px;color:var(--t3)">每服务执行 · ${esc(st.where)}</span>
+      </div>
+      ${body}
+    </div>`;
+  };
+
+  let cardNo = 0;
+  const timelineCards = timeline.map(item => {
+    cardNo++;
+    const no = String(cardNo).padStart(2, '0');
+    return item.kind === 'svc' ? svcCard(item.step, no) : batchCard(item, no);
   }).join('');
 
-  const seg = (v, t) => `<button class="${(d.type || 'standard') === v ? 'on' : ''}" data-svc-type="${v}">${t}</button>`;
   const hostPickOpts = hostStoreOptions();
 
   return `
@@ -548,8 +621,7 @@ function viewService(){
         <div class="h1" style="display:flex;align-items:center;gap:10px">${esc(d.name)}
           <span class="pill pill--${d.enabled === false ? 'dim' : 'ok'}"><span class="dot dot--${d.enabled === false ? 'muted' : 'ok'}"></span>${d.enabled === false ? '已停用' : '就绪'}</span></div>
         <div class="ph-sub mono" style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;white-space:nowrap">
-            <span style="color:var(--t3)">↳</span>${svcTags(d).map(t => `<span class="tag type" style="color:var(--${tagColor(t)})">${esc(t)}</span>`).join(' ')}<span style="color:var(--line2)">·</span>
-            <span>${esc(d.type || 'standard')}</span><span style="color:var(--line2)">·</span>
+            <span style="color:var(--t3)">↳</span>${svcTags(d).map(t => `<span class="tag type" style="color:var(--${tagColor(t)})">${esc(t)}</span>`).join(' ')}${disabledStepsCount(d) ? `<span style="color:var(--line2)">·</span><span>跳过${disabledStepsCount(d)}步</span>` : ''}<span style="color:var(--line2)">·</span>
             <span>${esc(svcStage(d))}</span><span style="color:var(--line2)">·</span>
             <span style="color:var(--accent)">${esc(sv.host || '—')}:${sv.port || 22}</span><span style="color:var(--line2)">·</span>
             <span>并发受限于 WORKERS</span>
@@ -569,10 +641,6 @@ function viewService(){
         <div class="g2" style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px">
           <div class="field"><label>服务名称</label><input class="input" id="fName" value="${esc(d.name)}"></div>
           <div class="field"><label>阶段号（波次）</label><input class="input" id="fStage" value="${d.stage || 1}"></div>
-        </div>
-        <div class="field">
-          <label>任务类型</label>
-          <div class="seg" id="fType">${seg('standard','standard')}${seg('exec_only','exec_only')}${seg('sync_only','sync_only')}</div>
         </div>
         <div class="field"><label>标签 tags（回车 / 逗号 / 失焦添加，输入新标签或从已有标签中选择；点击 × 移除）</label>
           <div class="chips" id="fTagsChips">${(d.tags && d.tags.length ? d.tags : ['default']).map(t =>
@@ -667,13 +735,13 @@ function viewService(){
     <div class="R">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:13px;font-weight:600;color:var(--text)">生命周期钩子</span>
-        <span class="mono" style="font-size:10.5px;color:var(--t3);margin-left:auto">按顺序执行 · 失败即中断</span>
+        <span class="mono" style="font-size:10.5px;color:var(--t3);margin-left:auto">自上而下即真实执行顺序 · 服务步骤可单独开关</span>
       </div>
       <div style="display:flex;gap:9px;padding:10px 12px;border-radius:var(--r-btn);background:rgba(77,159,255,.08);border:1px solid rgba(77,159,255,.22)">
         <span class="mono" style="font-size:11px;color:var(--blue);flex:0 0 auto">i</span>
-        <span style="font-size:10.5px;color:var(--t2);line-height:1.6">批次级 preDeploy / postDeploy 在侧栏「批次钩子」统一配置，此处为本服务的四阶段钩子（点击 + 添加、垃圾桶删除，保存配置后落盘）</span>
+        <span style="font-size:10.5px;color:var(--t2);line-height:1.6">执行顺序：全局批次前置 → 标签批次前置 → 本服务五步 → 标签批次后置 → 全局批次后置；全局与标签批次钩子只读展示，点卡片上「解锁编辑」确认后才能修改。本服务标签尚未绑定批次钩子时，可到<a href="#/hooks" style="color:var(--blue)">批次钩子</a>页为标签挂载</span>
       </div>
-      ${hookCards}
+      <div class="hook-timeline">${timelineCards}</div>
     </div>
     </div>
   </div>`;
@@ -693,8 +761,6 @@ function applyServiceForm(){
     d.tags = d.tags || [];
     if (d.tags.indexOf(pendingTag) < 0) d.tags.push(pendingTag);
   }
-  const typeEl = document.querySelector('#fType button.on');
-  if (typeEl) d.type = typeEl.dataset.svcType;
   d.stage = num(val('fStage'), d.stage || 1);
   const enEl = document.querySelector('#fEnabled button.on');
   if (enEl) d.enabled = enEl.dataset.on === '1' ? true : (enEl.dataset.on === '0' ? false : undefined);
@@ -722,8 +788,9 @@ function applyServiceForm(){
 /* ============================================================
    视图 —— 7. 批次钩子（全局 hooks + 标签钩子 tagHooks）
    ============================================================ */
-function hookCard(id, key, cmds, tag, tagClass, tagHookName){
-  /* tagHookName 存在时命令增删作用于该标签钩子条目，否则作用于全局 hooks */
+function hookCard(id, key, cmds, tag, tagClass, tagHookName, locked){
+  /* tagHookName 存在时命令增删作用于该标签钩子条目，否则作用于全局 hooks；
+     locked 为 true 时只读展示（无增删入口），需先经解锁确认才可编辑 */
   const scopeId = 'cmdIn-' + (tagHookName ? 'th-' + String(tagHookName).replace(/[^a-zA-Z0-9_-]/g, '_') : 'hooks') + '-' + key;
   const scopeAttrs = tagHookName
     ? `data-cmd-scope="tagHooks" data-cmd-tag="${esc(tagHookName)}"`
@@ -731,8 +798,12 @@ function hookCard(id, key, cmds, tag, tagClass, tagHookName){
   const delAttr = i => tagHookName
     ? `data-tag-cmd-del="${esc(tagHookName)}" data-cmd-key="${esc(key)}" data-cmd-idx="${i}"`
     : `data-del-hook="${esc(key)}:${i}"`;
+  const cmdRows = (cmds || []).map((c,i) => `<div class="cmd"><span class="no mono">${i+1}</span><span class="pr">$</span><span class="tx">${esc(c)}</span>${locked ? '' : `<span class="ic" ${delAttr(i)} title="删除命令" aria-label="删除命令" style="cursor:pointer">${ICON.trash}</span>`}</div>`).join('') ||
+      `<span class="dim" style="font-size:11px">未配置命令</span>`;
+  const addRow = locked ? '' :
+    `<div class="cmd-add"><input class="input" id="${scopeId}" placeholder="输入命令后回车添加（可连续添加多条）" ${scopeAttrs} data-cmd-key="${esc(key)}" autocomplete="off"></div>`;
   return `
-  <div class="hook">
+  <div class="hook${locked ? ' is-locked' : ''}">
     <div class="hook-hd">
       <span class="id">${id}</span>
       <span class="ttl">${esc(key)}</span>
@@ -741,9 +812,8 @@ function hookCard(id, key, cmds, tag, tagClass, tagHookName){
         <span class="pill ${tagClass}">${tagClass === 'pill--warn' ? '失败即阻断批次' : '有节点失败则不执行'}</span>
       </span>
     </div>
-    ${(cmds || []).map((c,i) => `<div class="cmd"><span class="no mono">${i+1}</span><span class="pr">$</span><span class="tx">${esc(c)}</span><span class="ic" ${delAttr(i)} title="删除命令" aria-label="删除命令" style="cursor:pointer">${ICON.trash}</span></div>`).join('') ||
-      `<span class="dim" style="font-size:11px">未配置命令</span>`}
-    <div class="cmd-add"><input class="input" id="${scopeId}" placeholder="输入命令后回车添加（可连续添加多条）" ${scopeAttrs} data-cmd-key="${esc(key)}" autocomplete="off"></div>
+    ${cmdRows}
+    ${addRow}
   </div>`;
 }
 function viewHooks(){

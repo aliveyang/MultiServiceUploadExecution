@@ -78,24 +78,83 @@ type HooksConfig struct {
 	PostUploadLocal  CommandList `json:"postUploadLocal,omitempty" yaml:"postUploadLocal,omitempty"`
 }
 
-// 部署任务类型常量
+// 部署任务类型常量（旧版 type 字段语义，迁移后仅作为过滤/展示的等价口径使用）
 const (
 	DeployTypeStandard = "standard"  // 经典全流程：构建 -> SSH -> 远端前置 -> SFTP上传 -> 远端后置 -> 本地后置
 	DeployTypeExecOnly = "exec_only" // 纯执行型：仅执行命令，跳过 SFTP 文件传输
 	DeployTypeSyncOnly = "sync_only" // 纯同步型：仅传输文件，跳过远程重启/执行命令
+	DeployTypeCustom   = "custom"    // 混合关闭步骤时的展示口径
 	DefaultTag         = "default"   // 默认标签名称（未打标服务的兜底归类）
 )
+
+// 流水线步骤标识（与 StepsConfig 字段、前端步骤卡 data-step-toggle 一一对应）
+const (
+	StepPreUploadLocal   = "preUploadLocal"
+	StepPreUploadRemote  = "preUploadRemote"
+	StepUpload           = "upload"
+	StepPostUploadRemote = "postUploadRemote"
+	StepPostUploadLocal  = "postUploadLocal"
+)
+
+// StepsConfig 流水线步骤开关：字段缺省或 true 为执行，显式 false 为跳过该阶段
+// （即使对应钩子命令或上传路径已配置也不执行，配置本身保留不删除）
+type StepsConfig struct {
+	PreUploadLocal   *bool `json:"preUploadLocal,omitempty" yaml:"preUploadLocal,omitempty"`     // 阶段1：上传前本地命令
+	PreUploadRemote  *bool `json:"preUploadRemote,omitempty" yaml:"preUploadRemote,omitempty"`   // 阶段2：上传前远端命令
+	Upload           *bool `json:"upload,omitempty" yaml:"upload,omitempty"`                     // 阶段3：SFTP 文件传输
+	PostUploadRemote *bool `json:"postUploadRemote,omitempty" yaml:"postUploadRemote,omitempty"` // 阶段4：上传后远端命令
+	PostUploadLocal  *bool `json:"postUploadLocal,omitempty" yaml:"postUploadLocal,omitempty"`   // 阶段5：上传后本地命令
+}
+
+// IsStepEnabled 检查指定流水线步骤是否启用（未知步骤或未显式关闭时视为启用）
+func (s StepsConfig) IsStepEnabled(step string) bool {
+	var flag *bool
+	switch step {
+	case StepPreUploadLocal:
+		flag = s.PreUploadLocal
+	case StepPreUploadRemote:
+		flag = s.PreUploadRemote
+	case StepUpload:
+		flag = s.Upload
+	case StepPostUploadRemote:
+		flag = s.PostUploadRemote
+	case StepPostUploadLocal:
+		flag = s.PostUploadLocal
+	default:
+		return true
+	}
+	return flag == nil || *flag
+}
+
+// TypeLabel 根据步骤开关推导与旧版 type 语义等价的展示标签（CLI 汇总表/事件载荷口径）
+func (s StepsConfig) TypeLabel() string {
+	preRemoteOn := s.IsStepEnabled(StepPreUploadRemote)
+	postRemoteOn := s.IsStepEnabled(StepPostUploadRemote)
+	uploadOn := s.IsStepEnabled(StepUpload)
+	switch {
+	case uploadOn && preRemoteOn && postRemoteOn &&
+		s.IsStepEnabled(StepPreUploadLocal) && s.IsStepEnabled(StepPostUploadLocal):
+		return DeployTypeStandard
+	case !uploadOn && preRemoteOn && postRemoteOn:
+		return DeployTypeExecOnly
+	case !preRemoteOn && !postRemoteOn && uploadOn:
+		return DeployTypeSyncOnly
+	default:
+		return DeployTypeCustom
+	}
+}
 
 // ServiceConfig 单个配置单元 (1. 服务ip/用户/密码 + 2. 上传前本地/远端命令 + 3. 上传后远端/本地命令)
 type ServiceConfig struct {
 	Name    string       `json:"name" yaml:"name"`
 	Group   string       `json:"group,omitempty" yaml:"group,omitempty"`     // [已废弃] 旧版单分组字段，仅用于解析旧配置；加载时自动迁移至 tags
-	Type    string       `json:"type,omitempty" yaml:"type,omitempty"`       // 部署类型: standard, exec_only, sync_only
+	Type    string       `json:"type,omitempty" yaml:"type,omitempty"`       // [已废弃] 旧版部署类型，仅用于解析旧配置；加载时自动迁移至 steps
 	Stage   int          `json:"stage,omitempty" yaml:"stage,omitempty"`     // 执行波次/阶段 (默认 1，按升序批次执行)
 	Tags    []string     `json:"tags,omitempty" yaml:"tags,omitempty"`       // 标签列表：多维度归类/筛选，多选部署时按并集匹配
 	HostRef string       `json:"hostRef,omitempty" yaml:"hostRef,omitempty"` // 引用主机库条目名称；内联 server 字段优先级高于库值
 	Server  ServerConfig `json:"server" yaml:"server"`
 	Upload  UploadConfig `json:"upload" yaml:"upload"`
+	Steps   StepsConfig  `json:"steps,omitempty" yaml:"steps,omitempty"` // 流水线步骤开关（缺省全部执行）
 	Hooks   HooksConfig  `json:"hooks" yaml:"hooks"`
 	Enabled *bool        `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
@@ -336,6 +395,16 @@ func warnDeprecatedSections(data []byte, format string) {
 	if _, ok := raw["scenarios"]; ok {
 		logger.System("[config] 提示：检测到旧版 \"scenarios\" 字段，场景预设已移除，请改用服务标签(tags)进行筛选部署。")
 	}
+	if svcs, ok := raw["services"].([]any); ok {
+		for _, s := range svcs {
+			if m, ok := s.(map[string]any); ok {
+				if _, ok := m["type"]; ok {
+					logger.System("[config] 提示：检测到旧版服务 \"type\" 字段，已自动迁移为 \"steps\" 步骤开关（exec_only→关闭 upload，sync_only→关闭远端钩子步骤），下次保存配置后即为新格式。")
+					break
+				}
+			}
+		}
+	}
 }
 
 // LoadConfig 从指定路径加载并解析配置文件（支持 .json, .yaml, .yml），并动态展开凭据中的 ${ENV} 环境变量
@@ -559,18 +628,23 @@ func ValidateAndNormalize(cfg *DeployConfig) error {
 		}
 		svc.Group = ""
 
-		// 任务类型默认值
-		if strings.TrimSpace(svc.Type) == "" {
-			svc.Type = DeployTypeStandard
-		} else {
-			svc.Type = strings.ToLower(strings.TrimSpace(svc.Type))
-			switch svc.Type {
-			case DeployTypeStandard, DeployTypeExecOnly, DeployTypeSyncOnly:
-				// 合法类型
-			default:
-				return fmt.Errorf("service %q: invalid deploy type %q (allowed: standard, exec_only, sync_only)", svc.Name, svc.Type)
-			}
+		// 旧版 type 字段 → steps 步骤开关平滑迁移（幂等）：
+		// exec_only 关闭上传步骤，sync_only 关闭两个远端钩子步骤，standard/空 全部保持启用；
+		// 迁移后清空 type，保存配置时不再序列化旧字段。
+		switch strings.ToLower(strings.TrimSpace(svc.Type)) {
+		case "":
+			// 未声明类型：全部步骤保持默认启用
+		case DeployTypeStandard:
+			// 经典全流程：与默认步骤开关等价
+		case DeployTypeExecOnly:
+			svc.Steps.Upload = boolPtr(false)
+		case DeployTypeSyncOnly:
+			svc.Steps.PreUploadRemote = boolPtr(false)
+			svc.Steps.PostUploadRemote = boolPtr(false)
+		default:
+			return fmt.Errorf("service %q: invalid deploy type %q (allowed: standard, exec_only, sync_only)", svc.Name, svc.Type)
 		}
+		svc.Type = ""
 
 		// 波次/阶段默认值 (>=1)
 		if svc.Stage <= 0 {
@@ -716,8 +790,9 @@ func ExampleConfig() *DeployConfig {
 			{
 				Name:  "db-migrate-01",
 				Tags:  []string{"infra", "data"},
-				Type:  DeployTypeExecOnly,
 				Stage: 1, // 先执行数据库迁移与基础配置
+				// 关闭 SFTP 上传步骤 = 旧版 exec_only：仅执行远端命令，不做文件传输
+				Steps: StepsConfig{Upload: boolPtr(false)},
 				Server: ServerConfig{
 					Host:           "192.168.1.100",
 					Port:           22,
@@ -736,7 +811,6 @@ func ExampleConfig() *DeployConfig {
 			{
 				Name:  "api-server-01",
 				Tags:  []string{"backend"},
-				Type:  DeployTypeStandard,
 				Stage: 2, // 第二波次：部署核心 API 服务
 				Server: ServerConfig{
 					Host:           "192.168.1.101",
@@ -773,8 +847,12 @@ func ExampleConfig() *DeployConfig {
 			{
 				Name:  "web-server-02",
 				Tags:  []string{"frontend", "cdn"},
-				Type:  DeployTypeStandard,
 				Stage: 3, // 第三波次：更新前端静态资源
+				// 关闭两个远端钩子步骤 = 旧版 sync_only：仅同步文件，不在远端执行命令
+				Steps: StepsConfig{
+					PreUploadRemote:  boolPtr(false),
+					PostUploadRemote: boolPtr(false),
+				},
 				Server: ServerConfig{
 					Host:           "192.168.1.102",
 					Port:           22,

@@ -99,6 +99,48 @@ func TestFilterServicesWithTags(t *testing.T) {
 	}
 }
 
+// TestFilterServicesBySteps 旧 type 语义迁移为步骤开关后，--type 过滤按开关等价匹配
+func TestFilterServicesBySteps(t *testing.T) {
+	off := func(b bool) *bool { return &b }
+	cfg := &config.DeployConfig{
+		Services: []config.ServiceConfig{
+			{Name: "full-1", Tags: []string{"app"}}, // 全步骤启用 = standard
+			{Name: "exec-1", Tags: []string{"app"}, Steps: config.StepsConfig{Upload: off(false)}},
+			{Name: "sync-1", Tags: []string{"app"}, Steps: config.StepsConfig{
+				PreUploadRemote: off(false), PostUploadRemote: off(false),
+			}},
+			{Name: "mixed-1", Tags: []string{"app"}, Steps: config.StepsConfig{PostUploadLocal: off(false)}},
+		},
+	}
+
+	mgr := NewDeployManager(cfg, DeployOptions{TargetTypes: []string{"exec_only"}})
+	res, err := mgr.filterServices()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || res[0].Name != "exec-1" {
+		t.Fatalf("expected only 'exec-1' for exec_only filter, got %v", res)
+	}
+
+	mgr = NewDeployManager(cfg, DeployOptions{TargetTypes: []string{"sync_only"}})
+	res, err = mgr.filterServices()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || res[0].Name != "sync-1" {
+		t.Fatalf("expected only 'sync-1' for sync_only filter, got %v", res)
+	}
+
+	mgr = NewDeployManager(cfg, DeployOptions{TargetTypes: []string{"standard"}})
+	res, err = mgr.filterServices()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || res[0].Name != "full-1" {
+		t.Fatalf("expected only 'full-1' for standard filter, got %v", res)
+	}
+}
+
 func TestStageExecutionAndCircuitBreaker(t *testing.T) {
 	buf := captureDeployerLog(t)
 

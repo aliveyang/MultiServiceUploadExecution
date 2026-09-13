@@ -53,7 +53,7 @@ func main() {
 	flag.StringVar(&targetsStr, "target", "", "Comma-separated target service names to deploy")
 	flag.StringVar(&tagsStr, "g", "", "Comma-separated target tags filter, union semantics (e.g. -g backend,data)")
 	flag.StringVar(&tagsStr, "tags", "", "Comma-separated target tags filter, union semantics")
-	flag.StringVar(&typesStr, "type", "", "Target deploy type to filter (e.g. --type exec_only, standard, sync_only)")
+	flag.StringVar(&typesStr, "type", "", "Deploy type filter matched against service steps (e.g. --type exec_only, standard, sync_only)")
 	flag.StringVar(&parallelStr, "p", "", "Override parallel mode (true or false)")
 	flag.StringVar(&parallelStr, "parallel", "", "Override parallel mode (true or false)")
 	flag.IntVar(&maxWorkers, "j", 10, "Maximum concurrent worker goroutines when in parallel mode (default 10)")

@@ -98,7 +98,8 @@ function renderTopbar(){
 function renderSide(){
   const side = document.getElementById('side');
   const sep  = document.getElementById('sideSep');
-  if (app.view === 'spaces' || app.view === 'execution') {
+  /* 仅执行监控页隐藏侧栏（终端全宽沉浸式）；空间管理页保留侧栏导航 */
+  if (app.view === 'execution') {
     side.style.display = 'none'; sep.style.display = 'none';
     return;
   }

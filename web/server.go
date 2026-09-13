@@ -24,6 +24,16 @@ var staticFiles embed.FS
 // devStaticDir 开发模式（DEPLOY_DEV=1）下前端静态资源的磁盘目录（相对启动时工作目录）
 const devStaticDir = "web/static"
 
+// noCacheFileServer 开发模式下禁用静态资源缓存：磁盘文件每次改动后 mtime 更新，
+// 但无 Cache-Control 头时浏览器会按启发式策略直接复用内存缓存中的旧脚本，
+// 导致「改完刷新即生效」失效；显式 no-cache 强制每次刷新都向服务器重新验证。
+type noCacheFileServer struct{ inner http.Handler }
+
+func (s noCacheFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache")
+	s.inner.ServeHTTP(w, r)
+}
+
 // newStaticHandler 构建前端静态资源处理器：
 // 开发模式（DEPLOY_DEV=1）且磁盘目录存在时直读磁盘，前端改动刷新浏览器即生效、无需重新编译；
 // 目录缺失或未开启开发模式时回退到编译期内嵌资源，生产交付行为保持不变。
@@ -31,7 +41,7 @@ func newStaticHandler(devDir string, devEnabled bool) (http.Handler, error) {
 	if devEnabled {
 		if st, err := os.Stat(devDir); err == nil && st.IsDir() {
 			logger.System("Dev mode enabled: serving static assets from disk (%s), page refresh picks up edits without rebuild.", devDir)
-			return http.FileServer(http.Dir(devDir)), nil
+			return noCacheFileServer{http.FileServer(http.Dir(devDir))}, nil
 		}
 		logger.System("Dev mode requested but %s not found, falling back to embedded assets.", devDir)
 	}

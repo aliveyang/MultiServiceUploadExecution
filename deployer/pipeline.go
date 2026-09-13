@@ -31,7 +31,7 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	result = ServiceResult{
 		ServiceName: svc.Name,
 		Tags:        svc.Tags,
-		Type:        svc.Type,
+		Type:        typeLabelOf(svc),
 		Stage:       svc.Stage,
 		Host:        fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
 	}
@@ -45,7 +45,9 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	}
 
 	// Phase 1: 上传前本地执行命令 (PreUploadLocal)
-	if err := runHooks(ctx, log, "Phase 1/5: pre-upload local commands", svc.Hooks.PreUploadLocal, func(c string) error {
+	if !svc.Steps.IsStepEnabled(config.StepPreUploadLocal) {
+		log.Info(">>> Phase 1/5: Step 'preUploadLocal' is disabled, skipping local pre-upload commands.")
+	} else if err := runHooks(ctx, log, "Phase 1/5: pre-upload local commands", svc.Hooks.PreUploadLocal, func(c string) error {
 		return ExecuteLocalCommandContext(ctx, c, log)
 	}); err != nil {
 		return aborted(result, log, err)
@@ -68,14 +70,12 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	}
 
 	// Phase 3: 上传前远端执行命令 (PreUploadRemote)
-	if svc.Type != config.DeployTypeSyncOnly {
-		if err := runHooks(ctx, log, "Phase 2/5: pre-upload remote commands", svc.Hooks.PreUploadRemote, func(c string) error {
-			return sshClient.ExecuteRemoteCommandContext(ctx, c)
-		}); err != nil {
-			return aborted(result, log, err)
-		}
-	} else {
-		log.Info(">>> Phase 2/5: Deploy type is 'sync_only', skipping pre-upload remote commands.")
+	if !svc.Steps.IsStepEnabled(config.StepPreUploadRemote) {
+		log.Info(">>> Phase 2/5: Step 'preUploadRemote' is disabled, skipping remote pre-upload commands.")
+	} else if err := runHooks(ctx, log, "Phase 2/5: pre-upload remote commands", svc.Hooks.PreUploadRemote, func(c string) error {
+		return sshClient.ExecuteRemoteCommandContext(ctx, c)
+	}); err != nil {
+		return aborted(result, log, err)
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -83,8 +83,8 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	}
 
 	// Phase 4: 文件传输 (SFTP Upload)
-	if svc.Type == config.DeployTypeExecOnly {
-		log.Info(">>> Phase 3/5: Deploy type is 'exec_only', skipping file transfer.")
+	if !svc.Steps.IsStepEnabled(config.StepUpload) {
+		log.Info(">>> Phase 3/5: Step 'upload' is disabled, skipping file transfer.")
 	} else if strings.TrimSpace(svc.Upload.LocalPath) != "" && strings.TrimSpace(svc.Upload.RemotePath) != "" {
 		log.Info(">>> Phase 3/5: Transferring files via SFTP...")
 		uploader, err := NewSFTPUploader(sshClient, log)
@@ -107,14 +107,12 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	}
 
 	// Phase 5: 上传后远端执行命令 (PostUploadRemote)
-	if svc.Type != config.DeployTypeSyncOnly {
-		if err := runHooks(ctx, log, "Phase 4/5: post-upload remote commands", svc.Hooks.PostUploadRemote, func(c string) error {
-			return sshClient.ExecuteRemoteCommandContext(ctx, c)
-		}); err != nil {
-			return aborted(result, log, err)
-		}
-	} else {
-		log.Info(">>> Phase 4/5: Deploy type is 'sync_only', skipping post-upload remote commands.")
+	if !svc.Steps.IsStepEnabled(config.StepPostUploadRemote) {
+		log.Info(">>> Phase 4/5: Step 'postUploadRemote' is disabled, skipping remote post-upload commands.")
+	} else if err := runHooks(ctx, log, "Phase 4/5: post-upload remote commands", svc.Hooks.PostUploadRemote, func(c string) error {
+		return sshClient.ExecuteRemoteCommandContext(ctx, c)
+	}); err != nil {
+		return aborted(result, log, err)
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -122,7 +120,9 @@ func RunServicePipelineContext(ctx context.Context, svc config.ServiceConfig, in
 	}
 
 	// Phase 6: 上传后本地执行命令 (PostUploadLocal)
-	if err := runHooks(ctx, log, "Phase 5/5: post-upload local commands", svc.Hooks.PostUploadLocal, func(c string) error {
+	if !svc.Steps.IsStepEnabled(config.StepPostUploadLocal) {
+		log.Info(">>> Phase 5/5: Step 'postUploadLocal' is disabled, skipping local post-upload commands.")
+	} else if err := runHooks(ctx, log, "Phase 5/5: post-upload local commands", svc.Hooks.PostUploadLocal, func(c string) error {
 		return ExecuteLocalCommandContext(ctx, c, log)
 	}); err != nil {
 		return aborted(result, log, err)
@@ -159,4 +159,13 @@ func aborted(result ServiceResult, log *logger.ServiceLogger, err error) Service
 	result.Error = err
 	log.Error("Deployment aborted: %v", err)
 	return result
+}
+
+// typeLabelOf 服务的展示类型：优先旧版显式 type 字段（未迁移的内存配置），
+// 否则根据步骤开关推导等价标签（standard / exec_only / sync_only / custom）
+func typeLabelOf(svc config.ServiceConfig) string {
+	if t := strings.ToLower(strings.TrimSpace(svc.Type)); t != "" {
+		return t
+	}
+	return svc.Steps.TypeLabel()
 }

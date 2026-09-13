@@ -27,12 +27,6 @@ function bind(){
     };
   }
 
-  /* 类型筛选下拉（编排台） */
-  const typeSel = document.getElementById('typeSel');
-  if (typeSel) {
-    typeSel.onchange = () => { app.typeFilter = typeSel.value; render(); };
-  }
-
   /* 自动打开浏览器开关（设置页，内存态，保存时统一收集） */
   const swAuto = document.getElementById('swAutoOpen');
   if (swAuto) swAuto.onclick = () => {
@@ -90,14 +84,46 @@ function bind(){
     el.onclick = ev => { ev.stopPropagation(); deleteKeyFlow(el.dataset.delKey); };
   });
 
-  /* 任务类型 / 启用状态分段（服务配置页，内存态 + 脏标记，保存时统一收集） */
-  c.querySelectorAll('[data-svc-type]').forEach(el => {
+  /* 流水线步骤开关（服务配置页）：先收集表单避免重渲染丢失未落盘输入，再切换 steps 标记 */
+  c.querySelectorAll('[data-step-toggle]').forEach(el => {
     el.onclick = () => {
-      c.querySelectorAll('[data-svc-type]').forEach(b => b.classList.remove('on'));
-      el.classList.add('on');
+      const d = currentService();
+      if (!d) return;
+      applyServiceForm();
+      const key = el.dataset.stepToggle;
+      d.steps = d.steps || {};
+      if (stepEnabled(d, key)) { d.steps[key] = false; } else { delete d.steps[key]; }
+      if (!Object.keys(d.steps).length) delete d.steps;
       markDirty();
+      render();
     };
   });
+
+  /* 全局 / 标签批次钩子解锁编辑（服务配置页）：确认影响范围后才放开编辑入口 */
+  c.querySelectorAll('[data-unlock-hooks]').forEach(el => {
+    el.onclick = () => {
+      const scope = el.dataset.unlockHooks || '';
+      let msg;
+      if (scope === 'global') {
+        msg = '全局批次钩子在每次部署批次的开始/结束于本地执行一次，修改后对所有服务的部署生效。\n确定要解锁编辑吗？';
+      } else {
+        const tag = scope.slice(4);
+        msg = '标签 "' + tag + '" 的批次钩子会对所有携带该标签的服务批次生效（前置在各波次开始前、后置在该标签全部节点成功后各执行一次）。\n确定要解锁编辑吗？';
+      }
+      if (!confirm(msg)) return;
+      applyServiceForm();
+      if (scope === 'global') {
+        app.hookUnlockGlobal = true;
+      } else {
+        app.hookUnlockTags = app.hookUnlockTags || [];
+        const tag = scope.slice(4);
+        if (app.hookUnlockTags.indexOf(tag) < 0) app.hookUnlockTags.push(tag);
+      }
+      render();
+    };
+  });
+
+  /* 启用状态分段（服务配置页，内存态 + 脏标记，保存时统一收集） */
   c.querySelectorAll('#fEnabled [data-on]').forEach(el => {
     el.onclick = () => {
       c.querySelectorAll('#fEnabled [data-on]').forEach(b => b.classList.remove('on'));

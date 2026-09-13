@@ -86,6 +86,17 @@ select.input:invalid{color:var(--t3)}
 .hook-hd .id{font-family:var(--mono);font-size:11.5px;font-weight:500;color:var(--t2)}
 .hook-hd .ttl{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--text)}
 .hook-hd .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.hook-hd .right .mono{white-space:nowrap;flex:0 0 auto}
+/* 步骤开关禁用态：整体弱化并收敛边框（配置保留，仅部署时跳过） */
+.hook.is-off{opacity:.55;border-style:dashed}
+/* 全局/标签批次钩子只读态：左侧描边提示锁定 */
+.hook.is-locked{border-left:2px solid var(--line2)}
+.hook .sw{flex:0 0 auto;cursor:pointer}
+/* 生命周期时间线：卡片按真实执行顺序纵向排布，左侧淡色引导线贯穿 */
+.hook-timeline{display:flex;flex-direction:column;gap:10px;position:relative;padding-left:12px}
+.hook-timeline::before{content:'';position:absolute;left:3px;top:10px;bottom:10px;width:2px;border-radius:1px;background:var(--line)}
+/* 批次级卡元信息行：执行时机 + 失败语义，独立于标题行避免挤压 */
+.hook-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .add-cmd{
   display:flex;align-items:center;gap:8px;padding:8px 12px;
   font-size:11.5px;color:var(--t3);border-radius:var(--r-cmd);

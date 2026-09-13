@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -417,8 +419,11 @@ func TestServiceGroupTypeStageDefaults(t *testing.T) {
 	if len(s1.Tags) != 1 || s1.Tags[0] != DefaultTag {
 		t.Errorf("expected default tag %q, got %v", DefaultTag, s1.Tags)
 	}
-	if s1.Type != DeployTypeStandard {
-		t.Errorf("expected default type %q, got %q", DeployTypeStandard, s1.Type)
+	if s1.Type != "" {
+		t.Errorf("expected legacy type field cleared after migration, got %q", s1.Type)
+	}
+	if s1.Steps.TypeLabel() != DeployTypeStandard {
+		t.Errorf("expected all steps enabled by default, got %q", s1.Steps.TypeLabel())
 	}
 	if s1.Stage != 1 {
 		t.Errorf("expected default stage 1, got %d", s1.Stage)
@@ -432,8 +437,18 @@ func TestServiceGroupTypeStageDefaults(t *testing.T) {
 	if s2.Group != "" {
 		t.Errorf("expected legacy group field cleared after migration, got %q", s2.Group)
 	}
-	if s2.Type != DeployTypeExecOnly {
-		t.Errorf("expected type 'exec_only', got %q", s2.Type)
+	// 旧 type=exec_only 迁移为关闭 upload 步骤，其余步骤保持启用
+	if s2.Type != "" {
+		t.Errorf("expected legacy type field cleared after migration, got %q", s2.Type)
+	}
+	if s2.Steps.IsStepEnabled(StepUpload) {
+		t.Errorf("expected upload step disabled after exec_only migration")
+	}
+	if !s2.Steps.IsStepEnabled(StepPreUploadRemote) || !s2.Steps.IsStepEnabled(StepPostUploadRemote) {
+		t.Errorf("expected remote hook steps enabled after exec_only migration")
+	}
+	if s2.Steps.TypeLabel() != DeployTypeExecOnly {
+		t.Errorf("expected migrated steps to label as %q, got %q", DeployTypeExecOnly, s2.Steps.TypeLabel())
 	}
 	if s2.Stage != 2 {
 		t.Errorf("expected stage 2, got %d", s2.Stage)
@@ -457,6 +472,74 @@ func TestInvalidDeployType(t *testing.T) {
 	err := ValidateAndNormalize(cfg)
 	if err == nil {
 		t.Fatalf("expected error for invalid deploy type, got nil")
+	}
+}
+
+// TestLegacySyncOnlyTypeMigration 旧 type=sync_only 迁移为关闭两个远端钩子步骤，且不再序列化 type 字段
+func TestLegacySyncOnlyTypeMigration(t *testing.T) {
+	cfg := &DeployConfig{
+		Services: []ServiceConfig{
+			{
+				Name:   "sync-svc",
+				Type:   DeployTypeSyncOnly,
+				Server: ServerConfig{Host: "127.0.0.1", Username: "root", Password: "pwd"},
+				Upload: UploadConfig{LocalPath: "./dist", RemotePath: "/opt/app"},
+			},
+		},
+	}
+	if err := ValidateAndNormalize(cfg); err != nil {
+		t.Fatalf("ValidateAndNormalize failed: %v", err)
+	}
+	svc := cfg.Services[0]
+	if svc.Type != "" {
+		t.Errorf("expected legacy type field cleared after migration, got %q", svc.Type)
+	}
+	if svc.Steps.IsStepEnabled(StepPreUploadRemote) || svc.Steps.IsStepEnabled(StepPostUploadRemote) {
+		t.Errorf("expected remote hook steps disabled after sync_only migration")
+	}
+	if !svc.Steps.IsStepEnabled(StepUpload) || !svc.Steps.IsStepEnabled(StepPreUploadLocal) || !svc.Steps.IsStepEnabled(StepPostUploadLocal) {
+		t.Errorf("expected upload and local hook steps enabled after sync_only migration")
+	}
+
+	// 迁移结果序列化后不应再出现 type 字段，且 steps 显式落盘
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(data), `"type"`) {
+		t.Errorf("expected type field to be dropped after migration, got %s", data)
+	}
+	if !strings.Contains(string(data), `"preUploadRemote":false`) || !strings.Contains(string(data), `"postUploadRemote":false`) {
+		t.Errorf("expected disabled steps serialized as false, got %s", data)
+	}
+}
+
+// TestExplicitStepsConfig 显式 steps 开关直接生效且展示标签按组合推导
+func TestExplicitStepsConfig(t *testing.T) {
+	cfg := &DeployConfig{
+		Services: []ServiceConfig{
+			{
+				Name:   "custom-svc",
+				Server: ServerConfig{Host: "127.0.0.1", Username: "root", Password: "pwd"},
+				Steps: StepsConfig{
+					PreUploadRemote: boolPtr(false),
+					Upload:          boolPtr(false),
+				},
+			},
+		},
+	}
+	if err := ValidateAndNormalize(cfg); err != nil {
+		t.Fatalf("ValidateAndNormalize failed: %v", err)
+	}
+	svc := cfg.Services[0]
+	if svc.Steps.IsStepEnabled(StepPreUploadRemote) || svc.Steps.IsStepEnabled(StepUpload) {
+		t.Errorf("expected explicitly disabled steps to stay disabled")
+	}
+	if !svc.Steps.IsStepEnabled(StepPostUploadLocal) {
+		t.Errorf("expected unspecified steps to default to enabled")
+	}
+	if svc.Steps.TypeLabel() != DeployTypeCustom {
+		t.Errorf("expected mixed steps to label as %q, got %q", DeployTypeCustom, svc.Steps.TypeLabel())
 	}
 }
 

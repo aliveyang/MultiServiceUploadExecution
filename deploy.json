@@ -33,7 +33,6 @@
     {
       "name": "backend-node-01",
       "tags": ["backend"],
-      "type": "standard",
       "stage": 1,
       "server": {
         "host": "192.168.1.101",
@@ -62,7 +61,6 @@
     {
       "name": "backend-node-02",
       "tags": ["backend"],
-      "type": "standard",
       "stage": 1,
       "server": {
         "host": "192.168.1.102",
@@ -91,7 +89,6 @@
     {
       "name": "frontend-node-01",
       "tags": ["frontend", "web"],
-      "type": "standard",
       "stage": 2,
       "server": {
         "host": "192.168.1.201",
@@ -124,7 +121,6 @@
     {
       "name": "frontend-node-02",
       "tags": ["frontend", "web"],
-      "type": "standard",
       "stage": 2,
       "server": {
         "host": "192.168.1.202",

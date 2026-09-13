@@ -47,7 +47,7 @@ func (m *DeployManager) runOne(ctx context.Context, svc config.ServiceConfig, id
 	m.emit(EventServiceStarted, ServiceNodeInput{
 		Name:  svc.Name,
 		Tags:  svc.Tags,
-		Type:  svc.Type,
+		Type:  typeLabelOf(svc),
 		Stage: svc.Stage,
 		Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
 	})
@@ -116,7 +116,7 @@ func (m *DeployManager) RunWithContext(ctx context.Context) (bool, error) {
 		plan = append(plan, ServiceNodeInput{
 			Name:  svc.Name,
 			Tags:  svc.Tags,
-			Type:  svc.Type,
+			Type:  typeLabelOf(svc),
 			Stage: stage,
 			Host:  fmt.Sprintf("%s:%d", svc.Server.Host, svc.Server.Port),
 		})
@@ -491,10 +491,6 @@ func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 		}
 
 		sName := strings.ToLower(strings.TrimSpace(svc.Name))
-		sType := strings.ToLower(strings.TrimSpace(svc.Type))
-		if sType == "" {
-			sType = config.DeployTypeStandard
-		}
 
 		// 1. 服务名过滤
 		if len(targetServices) > 0 && !targetServices[sName] {
@@ -504,8 +500,8 @@ func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 		if len(targetTags) > 0 && !svcHasAnyTag(svc, targetTags) {
 			continue
 		}
-		// 3. 类型过滤
-		if len(targetTypes) > 0 && !targetTypes[sType] {
+		// 3. 类型过滤：旧版 type 语义迁移为步骤开关后按开关等价匹配
+		if len(targetTypes) > 0 && !svcMatchesTypeFilter(svc, targetTypes) {
 			continue
 		}
 
@@ -513,6 +509,32 @@ func (m *DeployManager) filterServices() ([]config.ServiceConfig, error) {
 	}
 
 	return filtered, nil
+}
+
+// svcMatchesTypeFilter 类型过滤：优先匹配旧版显式 type 字段（兼容未迁移的内存配置），
+// 迁移后（type 为空）按步骤开关推导等价类型语义
+func svcMatchesTypeFilter(svc config.ServiceConfig, targetTypes map[string]bool) bool {
+	for t := range targetTypes {
+		if t == strings.ToLower(strings.TrimSpace(svc.Type)) {
+			return true
+		}
+		steps := svc.Steps
+		switch t {
+		case config.DeployTypeStandard:
+			if steps.TypeLabel() == config.DeployTypeStandard {
+				return true
+			}
+		case config.DeployTypeExecOnly:
+			if steps.TypeLabel() == config.DeployTypeExecOnly {
+				return true
+			}
+		case config.DeployTypeSyncOnly:
+			if steps.TypeLabel() == config.DeployTypeSyncOnly {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // svcHasAnyTag 检查服务是否携带目标标签集合中的任一标签（并集匹配）
